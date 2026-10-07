@@ -1,0 +1,480 @@
+// =====================================================================
+//  web_page.h — หน้าเว็บที่ฝังอยู่ในนาฬิกา   ต่อ WiFi "Polygraph-Watch" แล้วเปิด http://192.168.4.1
+//
+//  หน้านี้ "อยู่ในเฟิร์มแวร์" (เก็บในแฟลชเป็น string ตัวเดียว) นาฬิกาจึงเป็นทั้ง
+//    backend  = REST API ใน web_server.cpp  (/api/live, /api/lie/..., /api/ml/...)
+//    frontend = หน้านี้ (HTML + CSS + JavaScript) ที่มือถือดาวน์โหลดไปรัน
+//  ใช้ได้จากมือถือเครื่องเดียว ไม่ต้องมีโน้ตบุ๊ก
+//  ส่วน Polygraph Studio บนโน้ตบุ๊กเป็นอีกโปรแกรมหนึ่งที่เรียก API ชุดเดียวกันนี้
+//
+//  v2.1
+//   - ไอคอนเป็น SVG ที่วาดเอง ไม่ใช้ emoji (emoji หน้าตาไม่เหมือนกันในแต่ละเครื่อง และดูไม่ทางการ)
+//   - โหมดเก็บข้อมูล (Train) / ใช้งานจริง (Detect), ดาวน์โหลด CSV, อัปโหลดโมเดล AI
+//   - ตั้งค่าการหลับ / ECO / กำลังส่ง WiFi
+//  ไม่โหลดอะไรจากอินเทอร์เน็ต (WiFi ของนาฬิกาไม่มีเน็ต) กราฟวาดด้วย <canvas> เอง
+// =====================================================================
+#pragma once
+#include <Arduino.h>
+
+static const char INDEX_HTML[] PROGMEM = R"HTML(<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wireless Polygraph</title>
+<style>
+:root{--bg:#eef1f6;--card:#fff;--line:#d9dfe9;--tx:#18212f;--mut:#5f6b80;--pri:#173f73;--pril:#e8eef8;
+--lie:#b42318;--liel:#fdecea;--tru:#1a7f37;--trul:#e7f5ec;--inc:#9a6700;--na:#6b7280}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",Tahoma,sans-serif;background:var(--bg);color:var(--tx)}
+.ico{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+header{position:sticky;top:0;z-index:5;background:var(--pri);color:#fff;display:flex;align-items:center;gap:10px;padding:10px 14px}
+header .ico.lg{width:28px;height:28px}header h1{margin:0;font-size:16px;font-weight:600}
+header small{display:block;opacity:.85;font-size:12px}
+.hs{margin-left:auto;display:flex;gap:12px;font-size:13px;align-items:center}.hs span{display:flex;gap:4px;align-items:center}
+.dot{width:9px;height:9px;border-radius:50%;background:#9ca3af}.dot.on{background:#4ade80}
+main{max-width:820px;margin:0 auto;padding:12px;display:grid;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+h2{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:15px;font-weight:600;color:var(--pri)}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--pri);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:#fff;color:var(--pri);font-weight:600;min-height:46px}
+.seg button.on{background:var(--pri);color:#fff}
+.hint{margin:8px 0 0;color:var(--mut);font-size:13px}
+ol.steps{margin:8px 0 0;padding-left:20px;color:var(--mut);font-size:13px}ol.steps li{margin:2px 0}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:14px;padding:9px 12px;
+border-radius:8px;border:1px solid var(--line);background:#f7f9fc;color:var(--tx);cursor:pointer;text-decoration:none;min-height:44px}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+button.tru{background:var(--trul);border-color:var(--tru);color:var(--tru);font-weight:600}
+button.lie{background:var(--liel);border-color:var(--lie);color:var(--lie);font-weight:600}
+button.dng{color:var(--lie)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.row.one{grid-template-columns:1fr}
+.lbl{text-align:center;color:var(--mut);font-size:13px}
+.vd{font-size:36px;font-weight:700;text-align:center;margin:2px 0 6px;letter-spacing:.5px}
+.vd.lie{color:var(--lie)}.vd.truth{color:var(--tru)}.vd.inconclusive{color:var(--inc)}.vd.invalid{color:var(--na)}
+.bar{height:8px;background:#e5e9f0;border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .4s}
+.meta{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}
+.tag{font-size:12px;padding:2px 9px;border-radius:12px;background:var(--pril);color:var(--pri)}
+.tag.w{background:#fff4d6;color:var(--inc)}
+.state{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;background:var(--pril);color:var(--pri);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.tile .h{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:12px}
+.tile b{display:block;font-size:21px;font-weight:600;margin-top:2px}.tile b small{font-size:12px;font-weight:400;color:var(--mut)}
+.tile em{display:block;font-style:normal;font-size:12px;color:var(--mut);min-height:18px}
+.tile.off b{color:var(--na);font-size:15px;font-weight:500}
+.tabs{display:flex;gap:6px;margin:12px 0 6px;flex-wrap:wrap}
+.tabs button{min-height:32px;padding:4px 12px;font-size:13px}.tabs button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+canvas{width:100%;height:150px;display:block;border:1px solid var(--line);border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mut);font-weight:500}
+td.lie{color:var(--lie);font-weight:600}td.truth{color:var(--tru);font-weight:600}td.inconclusive{color:var(--inc)}td.invalid{color:var(--na)}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.kv span:first-child{color:var(--mut);display:flex;align-items:center;gap:6px}
+select,input[type=text]{font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--tx);min-height:42px}
+.subj{display:flex;gap:8px;margin-top:10px}.subj input{flex:1;min-width:0}
+.cnt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;text-align:center}
+.cnt div{border:1px solid var(--line);border-radius:8px;padding:6px}.cnt b{display:block;font-size:20px}.cnt span{font-size:12px;color:var(--mut)}
+.msg{min-height:22px;margin-top:10px;font-size:14px}.msg.ok{color:var(--tru)}.msg.bad{color:var(--lie)}
+footer{text-align:center;color:var(--mut);font-size:12px;padding:4px 0 20px}a{color:var(--pri)}
+.hide{display:none!important}
+@media(max-width:520px){.grid{grid-template-columns:repeat(2,1fr)}.vd{font-size:30px}.hs .t{display:none}}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-logo" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M8 12h2l1-3 2 6 1-3h2"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-9.2-9.4A4.8 4.8 0 0 1 12 7.4a4.8 4.8 0 0 1 9.2 3.2C19.5 15.4 12 20 12 20z"/></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2 12h4l2-5 4 10 2-5h8"/></symbol>
+<symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11z"/></symbol>
+<symbol id="i-temp" viewBox="0 0 24 24"><path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 17v-6"/></symbol>
+<symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12c1.5-4 3-4 4.5 0s3 4 4.5 0 3-4 4.5 0 3 4 4.5 0"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/></symbol>
+<symbol id="i-batt" viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M5 10v4"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><path d="M12 19.5h.01"/></symbol>
+<symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4M10 10h4v4h-4z"/></symbol>
+<symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M4.6 10A8 8 0 1 1 6 17.3"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12h.01"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.7M12 17h.01"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.5h6V4M8.5 10h7M8.5 14h7M8.5 18h4"/></symbol>
+</svg>
+
+<header>
+<svg class="ico lg"><use href="#i-logo"/></svg>
+<div><h1>Wireless Polygraph</h1><small id="dev">กำลังเชื่อมต่อนาฬิกา...</small></div>
+<div class="hs"><span id="hbat"></span><span><i class="dot" id="dot"></i><b class="t" id="hcon">ออฟไลน์</b></span></div>
+</header>
+
+<main>
+<section class="card">
+<div class="seg" id="seg"><button data-m="train">เก็บข้อมูลเทรน AI</button><button data-m="detect">ใช้งานจริง</button></div>
+<p class="hint" id="mhint"></p>
+<ol class="steps" id="steps"></ol>
+</section>
+
+<section class="card">
+<div class="lbl">ผลการตรวจล่าสุด</div>
+<div class="vd" id="vd">-</div>
+<div class="bar"><i id="vbar"></i></div>
+<div class="meta" id="vmeta"></div>
+</section>
+
+<section class="card">
+<h2><svg class="ico"><use href="#i-clip"/></svg>ควบคุมการทดสอบ</h2>
+<div class="state"><svg class="ico"><use href="#i-target"/></svg><span id="st">-</span></div>
+<div class="bar" style="margin-top:6px"><i id="sbar"></i></div>
+<div class="row one"><button id="bBase"><svg class="ico"><use href="#i-target"/></svg>วัดค่าปกติ (baseline)</button></div>
+
+<div id="trainBox">
+<div class="row">
+<button class="tru" id="bAskT"><svg class="ico"><use href="#i-check"/></svg>ถามข้อที่ให้ตอบตามจริง</button>
+<button class="lie" id="bAskL"><svg class="ico"><use href="#i-x"/></svg>ถามข้อที่สั่งให้โกหก</button>
+</div>
+<div class="subj"><input type="text" id="subj" maxlength="20" placeholder="ชื่อผู้ถูกทดสอบ (ภาษาอังกฤษ)"><button id="bSubj"><svg class="ico"><use href="#i-user"/></svg>บันทึก</button></div>
+<div class="cnt"><div><b id="nT">0</b><span>ข้อตอบจริง</span></div><div><b id="nL">0</b><span>ข้อโกหก</span></div><div><b id="nB">0</b><span>ขนาดไฟล์ (KB)</span></div></div>
+<div class="row">
+<a class="btn" href="/api/ml/data.csv" download="polygraph_train.csv"><svg class="ico"><use href="#i-down"/></svg>ดาวน์โหลด CSV</a>
+<button class="dng" id="bClr"><svg class="ico"><use href="#i-trash"/></svg>ล้างข้อมูลเทรน</button>
+</div>
+</div>
+
+<div id="detBox">
+<div class="row one"><button class="pri" id="bAsk"><svg class="ico"><use href="#i-play"/></svg>เริ่มคำถาม</button></div>
+<div class="row">
+<button id="bYes"><svg class="ico"><use href="#i-check"/></svg>ตอบว่า "ใช่"</button>
+<button id="bNo"><svg class="ico"><use href="#i-x"/></svg>ตอบว่า "ไม่ใช่"</button>
+</div>
+</div>
+
+<div class="row">
+<button id="bAbort"><svg class="ico"><use href="#i-stop"/></svg>ยกเลิกข้อนี้</button>
+<button id="bReset"><svg class="ico"><use href="#i-reset"/></svg>เริ่มใหม่ทั้งหมด</button>
+</div>
+<div class="msg" id="msg"></div>
+</section>
+
+<section class="card">
+<h2><svg class="ico"><use href="#i-pulse"/></svg>ค่าที่วัดได้ขณะนี้</h2>
+<div class="grid" id="tiles"></div>
+<div class="tabs" id="tabs"><button data-s="hr" class="on">ชีพจร</button><button data-s="gsr">GSR</button><button data-s="tmp">อุณหภูมิผิว</button><button data-s="trm">การสั่น</button></div>
+<canvas id="cv"></canvas>
+</section>
+
+<section class="card">
+<h2><svg class="ico"><use href="#i-chip"/></svg>โมเดล AI</h2>
+<div id="mlInfo"></div>
+<div class="row">
+<label class="btn" for="mf"><svg class="ico"><use href="#i-up"/></svg>อัปโหลด model.json</label>
+<button class="dng" id="bMClr"><svg class="ico"><use href="#i-trash"/></svg>ลบโมเดล</button>
+</div>
+<input type="file" id="mf" accept=".json,application/json" class="hide">
+</section>
+
+<section class="card">
+<h2><svg class="ico"><use href="#i-list"/></svg>ผลย้อนหลัง</h2>
+<table><thead><tr><th>ข้อ</th><th>ประเภท</th><th>ผล</th><th>โอกาสโกหก</th><th>ตัดสินโดย</th></tr></thead><tbody id="res"></tbody></table>
+</section>
+
+<section class="card">
+<h2><svg class="ico"><use href="#i-gear"/></svg>พลังงานและการเชื่อมต่อ</h2>
+<div class="kv"><span><svg class="ico"><use href="#i-moon"/></svg> หลับอัตโนมัติเมื่อไม่มีใครใช้</span>
+<select id="sby"><option value="0">ปิด (ค่าเริ่มต้น)</option><option value="5">5 นาที</option><option value="10">10 นาที</option><option value="30">30 นาที</option><option value="60">60 นาที</option></select></div>
+<div class="kv"><span><svg class="ico"><use href="#i-gauge"/></svg> โหมดประหยัดไฟ (ECO)</span>
+<select id="eco"><option value="0">ปิด (CPU 160 MHz)</option><option value="1">เปิด (CPU 80 MHz)</option></select></div>
+<div class="kv"><span><svg class="ico"><use href="#i-wifi"/></svg> กำลังส่ง WiFi</span>
+<select id="wp"><option value="0">ต่ำ (แนะนำเมื่อใช้แบต)</option><option value="1">กลาง</option><option value="2">สูง</option></select></div>
+<div class="row">
+<button id="bLight"><svg class="ico"><use href="#i-moon"/></svg>พักเครื่องตอนนี้</button>
+<button id="bDeep"><svg class="ico"><use href="#i-moon"/></svg>หลับลึก 60 วินาที</button>
+</div>
+<p class="hint">พักเครื่อง (light sleep): WiFi จะหลุด กดปุ่ม BOOT บนนาฬิกาเพื่อปลุก ค่าปกติที่วัดไว้ยังอยู่ครบ |
+หลับลึก (deep sleep): ปิดเกือบทั้งหมด ตื่นเองเมื่อครบเวลาแล้วบูตใหม่ ต้องวัดค่าปกติใหม่</p>
+</section>
+
+<footer>FW <span id="fw">-</span> | <a href="/api/system" target="_blank">ข้อมูลระบบ (JSON)</a> | <a href="/update">อัปเดตเฟิร์มแวร์ (OTA)</a></footer>
+</main>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const ic=n=>'<svg class="ico"><use href="#i-'+n+'"/></svg>';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fx=(v,d)=>(v==null||isNaN(v))?'--':Number(v).toFixed(d);
+const VTH={truth:'จริง',lie:'โกหก',inconclusive:'ไม่แน่ชัด',invalid:'ใช้ไม่ได้',none:'-'};
+const KTH={test:'คำถามจริง',truth:'ข้อควบคุม: ตอบจริง',lie:'ข้อควบคุม: โกหก',warmup:'วอร์มอัพ'};
+const SRC=['สูตรมาตรฐาน','สูตรปรับจากข้อควบคุม','โมเดล AI'];
+const SIG={hr:['bpm',0],gsr:['µS',2],tmp:['°C',1],trm:['m/s²',3]};
+const STEPS={
+ train:['ใส่นาฬิกาให้เซนเซอร์ชีพจรแนบผิว นั่งนิ่ง ๆ','กด "วัดค่าปกติ" แล้วรอจนครบ (ประมาณ 30 วินาที)',
+  'ผู้ทดสอบกดปุ่ม "ตอบตามจริง" หรือ "สั่งให้โกหก" แล้วถามคำถามทันที ผลออกใน 12 วินาที',
+  'ทำสลับกันจนได้อย่างละ 15-20 ข้อ (หลายคนยิ่งดี) แล้วกด "ดาวน์โหลด CSV" ไปเทรนบนคอม'],
+ detect:['ใส่นาฬิกาให้เซนเซอร์ชีพจรแนบผิว นั่งนิ่ง ๆ','กด "วัดค่าปกติ" แล้วรอจนครบ',
+  'กด "เริ่มคำถาม" แล้วถามทันที เมื่อผู้ถูกทดสอบตอบ ให้กด "ใช่" หรือ "ไม่ใช่"',
+  'รอ 12 วินาที ผลจะแสดงในกล่อง "ผลการตรวจล่าสุด"']};
+let L=null,M=null,cfg={baselineSec:30,windowSec:12},lastRs=-1,lastMd=-1,sig='hr',fails=0;
+const H={hr:[],gsr:[],tmp:[],trm:[]};
+
+// ---------- การเรียก API ----------
+// fetch แล้วแปลงเป็น JSON; ถ้า HTTP ไม่ใช่ 2xx หรือ {"ok":false} ให้ throw ข้อความไทยจากนาฬิกา
+async function api(p,o){
+ const r=await fetch(p,o);let j=null;
+ try{j=await r.json()}catch(e){}
+ if(!r.ok||(j&&j.ok===false))throw new Error(j&&j.msg?j.msg:'HTTP '+r.status);
+ return j||{};
+}
+function post(p,body){
+ return api(p,body?{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body}:{method:'POST'});
+}
+function note(t,bad){
+ const m=$('msg');m.textContent=t;m.className='msg '+(bad?'bad':'ok');
+ clearTimeout(note.t);note.t=setTimeout(()=>{m.textContent=''},8000);
+}
+async function act(p,ok){
+ try{const j=await post(p);note(ok||j.msg||'เรียบร้อย');}
+ catch(e){note(e.message,true);}
+ live(false);loadRes();loadMl();
+}
+
+// ---------- ค่าสด (ทุก 1 วินาที) ----------
+async function live(push){
+ try{
+  L=await api('/api/live');fails=0;
+  if(push){
+   const v={hr:L.con?L.hr:null,gsr:L.gc?L.gsr:null,tmp:L.tmp,trm:L.trm};
+   for(const k in H){H[k].push(v[k]==null?null:+v[k]);if(H[k].length>120)H[k].shift();}
+  }
+  render();chart();
+  if(L.rs!==lastRs){lastRs=L.rs;loadRes();loadMl();}
+ }catch(e){
+  if(++fails>=3){$('dot').className='dot';$('hcon').textContent='ออฟไลน์';
+   $('dev').textContent='ขาดการเชื่อมต่อ - ตรวจว่ายังต่อ WiFi "Polygraph-Watch" อยู่';}
+ }
+}
+function tile(icon,name,val,unit,sub,off){
+ return '<div class="tile'+(off?' off':'')+'"><div class="h">'+ic(icon)+name+'</div><b>'+val+
+  (off?'':' <small>'+unit+'</small>')+'</b><em>'+(sub||'')+'</em></div>';
+}
+function render(){
+ $('dot').className='dot on';$('hcon').textContent='เชื่อมต่อแล้ว';
+ $('dev').textContent=L.id+'  |  FW '+L.fw;$('fw').textContent=L.fw;
+ $('hbat').innerHTML=ic('batt')+(L.bat?L.bp+'%':'USB');
+ $('hbat').title='แบตเตอรี่ '+fx(L.vb/1000,2)+' V';
+
+ const train=L.md===1;
+ if(L.md!==lastMd){
+  lastMd=L.md;
+  document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='train')===train));
+  $('trainBox').classList.toggle('hide',!train);$('detBox').classList.toggle('hide',train);
+  $('steps').innerHTML=STEPS[train?'train':'detect'].map(s=>'<li>'+s+'</li>').join('');
+ }
+ $('mhint').textContent=train
+  ?'โหมดเก็บข้อมูล: ถามคำถามที่รู้เฉลย ทุกข้อจะถูกบันทึกลงไฟล์ CSV ในนาฬิกา เพื่อนำไปเทรน AI'
+  :'โหมดใช้งานจริง: ถามคำถามที่ไม่รู้เฉลย ระบบตัดสินด้วย'+(L.ml?'โมเดล AI ที่ติดตั้งไว้':'สูตรมาตรฐาน (ยังไม่ได้ติดตั้งโมเดล AI)');
+
+ // สถานะ engine: 0 ยังไม่วัด, 1 กำลังวัดค่าปกติ, 2 พร้อม, 3 กำลังถาม
+ const es=L.es,p=Math.round((L.ep||0)*100);
+ let st='ขั้นแรก: กด "วัดค่าปกติ"';
+ if(es===1)st='กำลังวัดค่าปกติ เหลือ '+Math.max(0,Math.ceil((1-L.ep)*cfg.baselineSec))+' วินาที - นั่งนิ่ง ๆ หายใจตามปกติ';
+ else if(es===3)st='กำลังวัดคำตอบ เหลือ '+Math.max(0,Math.ceil((1-L.ep)*cfg.windowSec))+' วินาที';
+ else if(es===2)st=L.set?'พร้อมถามข้อถัดไป':'รอให้ร่างกายกลับสู่ปกติสักครู่ แล้วค่อยถามข้อถัดไป';
+ $('st').textContent=st;
+ $('sbar').style.width=(es===1||es===3?p:es===2?100:0)+'%';
+ const ready=es===2,q=es===3,base=es===1;
+ $('bBase').disabled=base||q;
+ ['bAskT','bAskL','bAsk'].forEach(i=>{$(i).disabled=!ready});
+ ['bYes','bNo'].forEach(i=>{$(i).disabled=!q});
+ $('bAbort').disabled=!(q||base);
+
+ const hrOk=L.con&&L.hr!=null;
+ $('tiles').innerHTML=
+  tile('heart','ชีพจร',hrOk?fx(L.hr,0):(L.con?'กำลังจับ...':'ไม่แตะผิว'),'bpm',hrOk?'HRV '+fx(L.hrv,0)+' ms':'',!hrOk)+
+  tile('drop','GSR (ความชื้นผิว)',L.gc?fx(L.gsr,2):'ไม่มีสัญญาณ','µS',L.gc?'':'ใช้ค่าอื่นแทนได้',!L.gc)+
+  tile('temp','อุณหภูมิผิว',fx(L.tmp,1),'°C','',L.tmp==null)+
+  tile('wave','มือสั่น',fx(L.trm,3),'m/s²','ขยับตัว '+fx(L.mot,2),false)+
+  tile('gauge','ระดับความตื่นตัว',L.si>=0?L.si:'--','/ 100',L.si>=0?'':'คำนวณหลังวัดค่าปกติ',false)+
+  tile('batt','แบตเตอรี่',L.bat?L.bp:'USB',L.bat?'%':'',fx(L.vb/1000,2)+' V | CPU '+L.cpu+' MHz',false);
+
+ for(const [id,v] of [['sby',L.sby],['eco',L.eco],['wp',L.wp]]){
+  const s=$(id);if(document.activeElement===s||v==null)continue;
+  if(![...s.options].some(o=>+o.value===+v)){const o=document.createElement('option');o.value=v;o.textContent=v+' นาที';s.appendChild(o);}
+  s.value=String(v);
+ }
+}
+
+// ---------- กราฟ 2 นาทีล่าสุด ----------
+function chart(){
+ const c=$('cv'),d=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;
+ if(c.width!==Math.round(w*d)){c.width=Math.round(w*d);c.height=Math.round(h*d);}
+ const g=c.getContext('2d');g.setTransform(d,0,0,d,0,0);g.clearRect(0,0,w,h);
+ const a=H[sig],ok=a.filter(v=>v!=null);
+ g.font='11px system-ui,sans-serif';g.fillStyle='#5f6b80';
+ if(ok.length<2){g.fillText(sig==='gsr'?'ไม่มีสัญญาณ GSR (ผิวแห้งหรือแผ่นไม่แตะ)':'ยังไม่มีข้อมูล',12,22);return;}
+ let lo=Math.min(...ok),hi=Math.max(...ok);
+ if(hi-lo<1e-6){hi+=0.5;lo-=0.5;}
+ const pd=(hi-lo)*0.12;lo-=pd;hi+=pd;
+ const L0=46,T0=8,W=w-L0-8,Hh=h-T0-22,X=i=>L0+W*i/119,Y=v=>T0+Hh*(hi-v)/(hi-lo);
+ // ช่วงแคบ (เช่นชีพจรแกว่ง 2 bpm) ต้องเพิ่มทศนิยม ไม่งั้นเลขแกนซ้ำกัน (76, 76)
+ const dp=Math.max(SIG[sig][1],Math.min(3,Math.ceil(-Math.log10((hi-lo)/3))));
+ g.strokeStyle='#e5e9f0';g.lineWidth=1;
+ for(let k=0;k<=3;k++){const y=T0+Hh*k/3;g.beginPath();g.moveTo(L0,y);g.lineTo(w-8,y);g.stroke();
+  g.fillText((hi-(hi-lo)*k/3).toFixed(dp),4,y+4);}
+ g.strokeStyle='#173f73';g.lineWidth=2;g.beginPath();
+ let pen=false;const off=120-a.length;
+ a.forEach((v,i)=>{if(v==null){pen=false;return;}const x=X(i+off),y=Y(v);if(pen)g.lineTo(x,y);else g.moveTo(x,y);pen=true;});
+ g.stroke();g.fillText('2 นาทีล่าสุด  หน่วย '+SIG[sig][0],L0,h-6);
+}
+
+// ---------- ผลการตรวจ ----------
+async function loadRes(){
+ try{
+  const j=await api('/api/lie?n=10');
+  if(j.config)cfg=j.config;
+  const R=j.results||[];
+  $('res').innerHTML=R.length?R.map(r=>'<tr><td>'+r.qid+'</td><td>'+(KTH[r.kind]||r.kind)+'</td><td class="'+r.verdict+'">'+
+   (VTH[r.verdict]||r.verdict)+'</td><td>'+Math.round(r.p*100)+'%</td><td>'+(SRC[r.src]||'-')+'</td></tr>').join('')
+   :'<tr><td colspan="5" style="color:var(--mut)">ยังไม่มีผล</td></tr>';
+  showVerdict(R[0]);
+ }catch(e){}
+}
+function reasons(m){
+ const t=[];
+ if(m&1)t.push('ไม่มีสัญญาณ GSR (ใช้ค่าอื่นแทน)');
+ if(m&2)t.push('เซนเซอร์ชีพจรไม่แตะผิว');
+ if(m&4)t.push('ขยับตัวมากเกินไป');
+ if(m&8)t.push('ข้อมูลก่อนถามไม่พอ');
+ return t;
+}
+function showVerdict(r){
+ const v=$('vd'),b=$('vbar');
+ if(!r){v.textContent='-';v.className='vd';b.style.width='0';
+  $('vmeta').innerHTML='<span class="tag">ยังไม่มีผล - วัดค่าปกติแล้วเริ่มคำถาม</span>';return;}
+ v.textContent=VTH[r.verdict]||r.verdict;v.className='vd '+r.verdict;
+ const p=Math.round(r.p*100);b.style.width=p+'%';
+ b.style.background=r.verdict==='lie'?'var(--lie)':r.verdict==='truth'?'var(--tru)':'var(--inc)';
+ let t='<span class="tag">ข้อ '+r.qid+' | '+(KTH[r.kind]||r.kind)+'</span><span class="tag">โอกาสโกหก '+p+'%</span>'+
+  '<span class="tag">ตัดสินด้วย'+(SRC[r.src]||'-')+'</span><span class="tag">คุณภาพสัญญาณ '+r.quality+'%</span>';
+ if(r.kind==='truth'||r.kind==='lie'){
+  t+='<span class="tag">เฉลย: '+(r.kind==='lie'?'โกหก':'จริง')+(r.verdict==='invalid'?'':(r.correct?' (ระบบทายถูก)':' (ระบบทายผิด)'))+'</span>';
+  if(L&&L.md===1)t+='<span class="tag'+(r.verdict==='invalid'?' w':'')+'">'+(r.verdict==='invalid'?'สัญญาณไม่ดี ไม่บันทึกข้อนี้':'บันทึกลงข้อมูลเทรนแล้ว')+'</span>';
+ }
+ for(const s of reasons(r.reasons))t+='<span class="tag w">'+s+'</span>';
+ $('vmeta').innerHTML=t;
+}
+
+// ---------- AI ----------
+async function loadMl(){
+ try{
+  M=await api('/api/ml');
+  $('nT').textContent=M.data.truth;$('nL').textContent=M.data.lie;$('nB').textContent=(M.data.bytes/1024).toFixed(1);
+  if(document.activeElement!==$('subj'))$('subj').value=M.subject||'';
+  const m=M.model;
+  $('mlInfo').innerHTML=m.loaded
+   ?'<div class="kv"><span>สถานะ</span><b style="color:var(--tru)">ติดตั้งแล้ว ใช้ตัดสินในโหมดใช้งานจริง</b></div>'+
+    '<div class="kv"><span>ชื่อโมเดล</span><span>'+esc(m.name)+'</span></div>'+
+    '<div class="kv"><span>ความแม่นยำจาก cross-validation</span><span>'+Math.round(m.accuracy*100)+'%</span></div>'+
+    '<div class="kv"><span>จำนวนข้อมูลที่ใช้เทรน</span><span>'+m.samples+' ข้อ</span></div>'+
+    '<div class="kv"><span>ค่าที่ใช้ตัดสิน</span><span>'+esc(m.features.join(', '))+'</span></div>'
+   :'<p class="hint" style="margin:0">ยังไม่ได้ติดตั้งโมเดล ตอนนี้ตัดสินด้วยสูตรมาตรฐาน<br>'+
+    'ขั้นตอน: เก็บข้อมูลในโหมดเก็บข้อมูล &rarr; ดาวน์โหลด CSV &rarr; เทรนบนคอมด้วย ml/train.py &rarr; อัปโหลด model.json ที่นี่</p>';
+  $('bMClr').disabled=!m.loaded;
+ }catch(e){}
+}
+// อ่าน model.json ในมือถือแล้วส่งเป็นฟอร์มสั้น ๆ (นาฬิกาไม่ต้องมีตัวแปลง JSON)
+$('mf').onchange=async e=>{
+ const f=e.target.files[0];e.target.value='';if(!f)return;
+ try{
+  const m=JSON.parse(await f.text());
+  if(!Array.isArray(m.features)||!Array.isArray(m.w)||!Array.isArray(m.mean)||!Array.isArray(m.scale))
+   throw new Error('ไฟล์นี้ไม่ใช่ model.json จาก ml/train.py');
+  const body=new URLSearchParams({features:m.features.join(','),mean:m.mean.join(','),scale:m.scale.join(','),
+   w:m.w.join(','),b:String(m.b),acc:String(m.cv_accuracy||0),samples:String(m.samples||0),
+   trained:String(m.trained_at||0),name:String(m.name||'model').slice(0,23)});
+  const j=await post('/api/ml/model',body.toString());note(j.msg||'ติดตั้งโมเดลแล้ว');
+ }catch(err){note(err.message,true);}
+ loadMl();live(false);
+};
+
+// ---------- ปุ่ม ----------
+document.querySelectorAll('#seg button').forEach(b=>{b.onclick=()=>act('/api/ml/mode?mode='+b.dataset.m)});
+document.querySelectorAll('#tabs button').forEach(b=>{b.onclick=()=>{
+ sig=b.dataset.s;document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));chart();}});
+$('bBase').onclick=()=>act('/api/lie/baseline','เริ่มวัดค่าปกติ - นั่งนิ่ง ๆ หายใจตามปกติ');
+$('bAskT').onclick=()=>act('/api/lie/question?kind=truth','ถามได้เลย: ข้อนี้ให้ผู้ถูกทดสอบตอบตามความจริง');
+$('bAskL').onclick=()=>act('/api/lie/question?kind=lie','ถามได้เลย: ข้อนี้ให้ผู้ถูกทดสอบโกหก');
+$('bAsk').onclick=()=>act('/api/lie/question?kind=test','ถามคำถามได้เลย แล้วกดปุ่มตามคำตอบ');
+$('bYes').onclick=()=>act('/api/lie/answer?ans=yes','บันทึกคำตอบ "ใช่" แล้ว');
+$('bNo').onclick=()=>act('/api/lie/answer?ans=no','บันทึกคำตอบ "ไม่ใช่" แล้ว');
+$('bAbort').onclick=()=>act('/api/lie/abort','ยกเลิกแล้ว');
+$('bReset').onclick=()=>{if(confirm('ล้างค่าปกติและผลทั้งหมดในหน่วยความจำ? (ข้อมูลเทรนในไฟล์ CSV ไม่หาย)'))act('/api/lie/reset','เริ่มใหม่แล้ว');};
+$('bSubj').onclick=()=>act('/api/ml/subject?name='+encodeURIComponent($('subj').value.trim()),'บันทึกชื่อแล้ว');
+$('bClr').onclick=()=>{if(confirm('ลบข้อมูลเทรนทั้งหมดในนาฬิกา? ควรดาวน์โหลด CSV เก็บไว้ก่อน'))act('/api/ml/data/clear?confirm=yes');};
+$('bMClr').onclick=()=>{if(confirm('ลบโมเดล AI แล้วกลับไปใช้สูตรมาตรฐาน?'))act('/api/ml/model/clear');};
+$('sby').onchange=e=>act('/api/sleep?auto='+e.target.value,e.target.value==='0'?'ปิดการหลับอัตโนมัติแล้ว':'นาฬิกาจะหลับเมื่อไม่มีใครใช้ '+e.target.value+' นาที');
+$('eco').onchange=e=>act('/api/power?mode='+(e.target.value==='1'?'eco':'normal'));
+$('wp').onchange=e=>act('/api/wifi?level='+e.target.value);
+$('bLight').onclick=()=>{if(confirm('WiFi จะหลุดจนกว่าจะกดปุ่ม BOOT บนนาฬิกา ดำเนินการต่อ?'))act('/api/sleep?now=light','กำลังพักเครื่อง - กดปุ่ม BOOT เพื่อปลุก แล้วต่อ WiFi ใหม่');};
+$('bDeep').onclick=()=>{if(confirm('นาฬิกาจะหลับ 60 วินาทีแล้วบูตใหม่ ค่าปกติและผลในหน่วยความจำจะหาย ดำเนินการต่อ?'))act('/api/sleep?now=deep&sec=60','นาฬิกาจะหลับ 60 วินาที แล้วต่อ WiFi ใหม่');};
+
+// นาฬิกาไม่มีนาฬิกาเวลาจริงสำรองไฟ -> ส่งเวลาจากมือถือไปให้ (ใช้ประทับเวลาในไฟล์ CSV)
+post('/api/time?epoch='+Math.floor(Date.now()/1000)).catch(()=>{});
+loadRes();loadMl();
+(async function loop(){await live(true);setTimeout(loop,1000);})();
+</script>
+</body></html>)HTML";
+
+// ---------------------------------------------------------------------
+//  หน้าอัปเดตเฟิร์มแวร์ไร้สาย (OTA)  http://192.168.4.1/update  (ถามรหัส admin / polygraph-ota)
+//  ส่งไฟล์ firmware.bin ด้วย XMLHttpRequest เพื่อแสดงความคืบหน้า — เบราว์เซอร์แนบรหัสผ่านที่กรอก
+//  ตอนเปิดหน้านี้ไปให้เอง (Basic auth ของ origin เดียวกัน)
+// ---------------------------------------------------------------------
+static const char UPDATE_HTML[] PROGMEM = R"HTML(<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>อัปเดตเฟิร์มแวร์ - Wireless Polygraph</title>
+<style>
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",Tahoma,sans-serif;background:#eef1f6;color:#18212f}
+header{background:#173f73;color:#fff;padding:12px 16px;font-weight:600}
+main{max-width:560px;margin:16px auto;padding:0 12px}
+.card{background:#fff;border:1px solid #d9dfe9;border-radius:10px;padding:16px}
+ol{padding-left:20px;color:#5f6b80;font-size:14px}
+input[type=file]{width:100%;margin:10px 0;font:inherit}
+button{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid #173f73;background:#173f73;color:#fff;min-height:44px;cursor:pointer}
+button:disabled{opacity:.4}
+.bar{height:10px;background:#e5e9f0;border-radius:5px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;width:0;background:#173f73}
+#msg{margin-top:10px;min-height:22px}.ok{color:#1a7f37}.bad{color:#b42318}a{color:#173f73}
+</style></head><body>
+<header>อัปเดตเฟิร์มแวร์ไร้สาย (OTA)</header>
+<main><div class="card">
+<ol><li>ใน VS Code กด Build แล้วหาไฟล์ <b>.pio/build/esp32c3/firmware.bin</b></li>
+<li>เลือกไฟล์ด้านล่างแล้วกด "อัปโหลด" — ห้ามปิดหน้านี้หรือถอดแบตระหว่างอัปโหลด</li>
+<li>เสร็จแล้วนาฬิการีสตาร์ทเอง ถ้าเฟิร์มแวร์ใหม่บูตไม่ผ่าน จะย้อนกลับเวอร์ชันเดิมให้อัตโนมัติ (rollback)</li></ol>
+<input type="file" id="f" accept=".bin,application/octet-stream">
+<button id="go" disabled>อัปโหลด</button>
+<div class="bar"><i id="pb"></i></div><div id="msg"></div>
+<p><a href="/">กลับหน้าหลัก</a></p>
+</div></main>
+<script>
+const f=document.getElementById('f'),go=document.getElementById('go'),pb=document.getElementById('pb'),msg=document.getElementById('msg');
+function say(t,c){msg.textContent=t;msg.className=c||'';}
+f.onchange=()=>{go.disabled=!f.files.length;if(f.files.length)say('ไฟล์ '+f.files[0].name+' ('+Math.round(f.files[0].size/1024)+' KB)');};
+go.onclick=()=>{
+ const file=f.files[0];if(!file)return;
+ if(!/\.bin$/i.test(file.name)){say('ต้องเป็นไฟล์ .bin','bad');return;}
+ go.disabled=true;f.disabled=true;
+ const fd=new FormData();fd.append('firmware',file,file.name);
+ const x=new XMLHttpRequest();x.open('POST','/update');
+ x.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded*100/e.total);pb.style.width=p+'%';say('กำลังอัปโหลด '+p+'%');}};
+ x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}
+  if(x.status===200&&j.ok){pb.style.width='100%';say('สำเร็จ นาฬิกากำลังรีสตาร์ท รอประมาณ 10 วินาทีแล้วต่อ WiFi ใหม่','ok');setTimeout(()=>{location.href='/'},12000);}
+  else{say('อัปเดตไม่สำเร็จ: '+(j.error||('HTTP '+x.status)),'bad');go.disabled=false;f.disabled=false;}};
+ x.onerror=()=>{say('การเชื่อมต่อขาดระหว่างอัปโหลด ลองใหม่อีกครั้ง','bad');go.disabled=false;f.disabled=false;};
+ x.send(fd);
+};
+</script></body></html>)HTML";

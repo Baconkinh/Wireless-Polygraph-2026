@@ -1,0 +1,166 @@
+"""
+report.py — รายงานผลการทดสอบแบบพิมพ์/บันทึกเป็น PDF ได้ (HTML ไฟล์เดียว กราฟเป็น SVG ไม่ต้องใช้เน็ต)
+เปิดที่ http://127.0.0.1:8000/report/<เลขเซสชัน>  แล้วกดปุ่ม "พิมพ์ / บันทึก PDF"
+"""
+from __future__ import annotations
+
+import datetime
+import html
+from typing import Any, Dict, List, Optional
+
+VERDICT_COLOR = {"lie": "#e5484d", "truth": "#12a594", "inconclusive": "#f5a524", "invalid": "#8b8d98", None: "#c9ccd6"}
+VERDICT_TH = {"lie": "โกหก", "truth": "พูดจริง", "inconclusive": "ไม่แน่ชัด", "invalid": "วัดไม่ได้"}
+
+
+def _e(x: Any) -> str:
+    return html.escape("" if x is None else str(x))
+
+
+def _fmt_time(ts: Optional[float]) -> str:
+    if not ts:
+        return "-"
+    return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
+
+
+def _series_svg(t: List[float], y: List[Optional[float]], windows: List[Dict[str, Any]], t0: float,
+                color: str, label: str, unit: str, w: int = 900, h: int = 170) -> str:
+    """กราฟเส้น 1 สัญญาณ + แถบสีช่วงคำถาม (สีตามคำตัดสิน)"""
+    pts = [(ti - t0, yi) for ti, yi in zip(t, y) if yi is not None]
+    if len(pts) < 2:
+        return f'<p class="muted">ไม่มีข้อมูล {label}</p>'
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    x_max = max(xs[-1], 1.0)
+    y_min, y_max = min(ys), max(ys)
+    if y_max - y_min < 1e-6:
+        y_max, y_min = y_max + 0.5, y_min - 0.5
+    pad = (y_max - y_min) * 0.1
+    y_min, y_max = y_min - pad, y_max + pad
+    L, R, T, B = 52, 10, 10, 26
+    sx = lambda x: L + (w - L - R) * x / x_max            # noqa: E731
+    sy = lambda v: T + (h - T - B) * (1 - (v - y_min) / (y_max - y_min))  # noqa: E731
+    out = [f'<svg viewBox="0 0 {w} {h}" class="chart" xmlns="http://www.w3.org/2000/svg">']
+    for win in windows:
+        x0, x1 = sx(max(0.0, win["start"] - t0)), sx(min(x_max, win["end"] - t0))
+        if x1 > x0:
+            out.append(f'<rect x="{x0:.1f}" y="{T}" width="{x1 - x0:.1f}" height="{h - T - B}" '
+                       f'fill="{VERDICT_COLOR.get(win["verdict"], "#c9ccd6")}" opacity="0.18"/>')
+            out.append(f'<text x="{x0 + 2:.1f}" y="{T + 11}" font-size="10" fill="#555">{_e(win["label"])}</text>')
+    for k in range(5):                                       # เส้นกริด + ค่าบนแกน y
+        v = y_min + (y_max - y_min) * k / 4
+        yy = sy(v)
+        out.append(f'<line x1="{L}" x2="{w - R}" y1="{yy:.1f}" y2="{yy:.1f}" stroke="#e6e8ee"/>')
+        out.append(f'<text x="{L - 6}" y="{yy + 3:.1f}" font-size="10" text-anchor="end" fill="#777">{v:.2f}</text>')
+    step = max(1, int(x_max / 8))
+    for s in range(0, int(x_max) + 1, step * 10 if x_max > 600 else step):
+        xx = sx(s)
+        out.append(f'<text x="{xx:.1f}" y="{h - 8}" font-size="10" text-anchor="middle" fill="#777">{s}s</text>')
+    path = " ".join(f"{'M' if i == 0 else 'L'}{sx(x):.1f},{sy(v):.1f}" for i, (x, v) in enumerate(pts))
+    out.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.6"/>')
+    out.append(f'<text x="{L + 4}" y="{h - B - 6}" font-size="11" fill="{color}" font-weight="600">{_e(label)} ({_e(unit)})</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+def _p_bars_svg(rows: List[Dict[str, Any]], w: int = 900, h: int = 200) -> str:
+    rows = [r for r in rows if r["result"]]
+    if not rows:
+        return '<p class="muted">ยังไม่มีผล</p>'
+    L, R, T, B = 40, 10, 10, 30
+    bw = (w - L - R) / len(rows)
+    sy = lambda p: T + (h - T - B) * (1 - p)              # noqa: E731
+    out = [f'<svg viewBox="0 0 {w} {h}" class="chart" xmlns="http://www.w3.org/2000/svg">']
+    for p, txt in ((0.65, "เกณฑ์โกหก 65%"), (0.35, "เกณฑ์จริง 35%")):
+        out.append(f'<line x1="{L}" x2="{w - R}" y1="{sy(p):.1f}" y2="{sy(p):.1f}" stroke="#999" stroke-dasharray="4 3"/>')
+        out.append(f'<text x="{w - R - 2}" y="{sy(p) - 3:.1f}" font-size="10" text-anchor="end" fill="#777">{txt}</text>')
+    for i, q in enumerate(rows):
+        r = q["result"]
+        p = max(0.0, min(1.0, r.get("p") or 0.0))
+        x = L + i * bw + bw * 0.15
+        out.append(f'<rect x="{x:.1f}" y="{sy(p):.1f}" width="{bw * 0.7:.1f}" height="{sy(0) - sy(p):.1f}" '
+                   f'rx="3" fill="{VERDICT_COLOR.get(r.get("verdict"))}"/>')
+        out.append(f'<text x="{x + bw * 0.35:.1f}" y="{sy(p) - 3:.1f}" font-size="10" text-anchor="middle">{round(p * 100)}%</text>')
+        out.append(f'<text x="{x + bw * 0.35:.1f}" y="{h - 12}" font-size="10" text-anchor="middle">ข้อ {q["ord"]}</text>')
+    out.append(f'<text x="4" y="{sy(1) + 8:.1f}" font-size="10" fill="#777">100%</text>')
+    out.append(f'<text x="4" y="{sy(0):.1f}" font-size="10" fill="#777">0%</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+def render(view: Dict[str, Any], samples: Dict[str, List]) -> str:
+    qs = view["questions"]
+    t0 = samples["t"][0] if samples.get("t") else (view.get("created") or 0)
+    windows = []
+    for q in qs:
+        if q.get("asked_at"):
+            v = (q.get("result") or {}).get("verdict")
+            windows.append({"start": q["asked_at"], "end": q["asked_at"] + 12, "verdict": v, "label": f"ข้อ {q['ord']}"})
+    s = view["summary"]
+    c = s["counts"]
+    ctl = s["controls"]
+    rows_html = []
+    for q in qs:
+        r = q.get("result")
+        ex = q.get("explain") or {}
+        top = ""
+        if ex.get("signals"):
+            sig = [x for x in ex["signals"] if x["available"]]
+            sig.sort(key=lambda x: -(x["z"] or -99))
+            top = "<br>".join(f'{_e(x["name"])}: {_e(x["value"])} (z={x["z"]})' for x in sig[:2])
+        v = (r or {}).get("verdict")
+        badge = (f'<span class="badge" style="background:{VERDICT_COLOR.get(v)}">{_e(VERDICT_TH.get(v, v))}</span>'
+                 if r else '<span class="muted">ยังไม่ได้ถาม</span>')
+        ans = {"yes": "ใช่", "no": "ไม่ใช่"}.get(q.get("answer"), "-")
+        rows_html.append(
+            f"<tr><td>{q['ord']}</td><td>{_e(q['text'])}<div class='muted small'>{_e(ex.get('summary', ''))}</div></td>"
+            f"<td>{_e(q.get('kind_th'))}</td><td>{ans}</td><td>{badge}</td>"
+            f"<td>{(str(round((r.get('p') or 0) * 100)) + '%') if r else '-'}</td>"
+            f"<td>{(str(r.get('quality')) + '%') if r else '-'}</td><td class='small'>{top}</td></tr>")
+    cit_html = ""
+    for g in view.get("cit") or []:
+        items = "".join(f"<li>{_e(x['text'])} — คะแนน {x['score']:.2f}</li>" for x in g["ranking"])
+        cit_html += (f'<div class="card"><h3>🎯 เกมทายเลขลับ: ระบบเดาว่า "{_e(g["best_question"])}"</h3>'
+                     f'<p>ความมั่นใจ: <b>{_e(g["confidence"])}</b> (ห่างจากอันดับ 2 = {g["margin"]} คะแนน, '
+                     f'ตอบแล้ว {g["answered"]}/{g["total"]} ข้อ)</p><ol>{items}</ol></div>')
+    gsr = _series_svg(samples.get("t", []), samples.get("gsr", []), windows, t0, "#3e63dd", "GSR", "µS")
+    hr = _series_svg(samples.get("t", []), samples.get("hr", []), windows, t0, "#e5484d", "ชีพจร", "bpm")
+    si = _series_svg(samples.get("t", []), samples.get("si", []), windows, t0, "#8e4ec6", "ดัชนีความเครียด", "0-100")
+    return f"""<!doctype html><html lang="th"><head><meta charset="utf-8">
+<title>รายงานเครื่องจับเท็จ — เซสชัน {view['id']}</title>
+<style>
+body{{font-family:"Leelawadee UI","Segoe UI","Noto Sans Thai",Tahoma,sans-serif;color:#1c2024;margin:24px auto;max-width:960px;line-height:1.5}}
+h1{{margin:0 0 4px}} h2{{margin-top:28px;border-bottom:2px solid #e6e8ee;padding-bottom:4px}}
+.muted{{color:#80838d}} .small{{font-size:12px}} .grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}}
+.card{{border:1px solid #e6e8ee;border-radius:12px;padding:12px;margin:10px 0}} .num{{font-size:26px;font-weight:700}}
+table{{width:100%;border-collapse:collapse;font-size:14px}} td,th{{border-bottom:1px solid #eceef2;padding:6px;text-align:left;vertical-align:top}}
+.badge{{color:#fff;border-radius:999px;padding:2px 10px;font-size:13px;white-space:nowrap}} .chart{{width:100%;height:auto}}
+.btn{{background:#3e63dd;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:14px;cursor:pointer}}
+@media print{{.noprint{{display:none}} body{{margin:0}}}}
+</style></head><body>
+<div class="noprint" style="text-align:right"><button class="btn" onclick="window.print()">🖨️ พิมพ์ / บันทึก PDF</button></div>
+<h1>🕵️ รายงานผลการทดสอบเครื่องจับเท็จ</h1>
+<div class="muted">เซสชัน #{view['id']} · ผู้ถูกทดสอบ: <b>{_e(view.get('subject') or '-')}</b> · ผู้ควบคุม: {_e(view.get('operator') or '-')}
+ · เริ่ม {_fmt_time(view.get('created'))} · นาฬิกา {_e(view.get('device') or '-')} (fw {_e(view.get('fw') or '-')})</div>
+<h2>สรุป</h2>
+<div class="grid">
+ <div class="card"><div class="muted">ถามแล้ว</div><div class="num">{s['asked']}/{s['total']}</div></div>
+ <div class="card"><div class="muted">โกหก</div><div class="num" style="color:{VERDICT_COLOR['lie']}">{c['lie']}</div></div>
+ <div class="card"><div class="muted">พูดจริง</div><div class="num" style="color:{VERDICT_COLOR['truth']}">{c['truth']}</div></div>
+ <div class="card"><div class="muted">ไม่แน่ชัด / วัดไม่ได้</div><div class="num">{c['inconclusive']} / {c['invalid']}</div></div>
+ <div class="card"><div class="muted">ข้อควบคุมที่ระบบตอบถูก</div><div class="num">{ctl['correct']}/{ctl['total']}</div></div>
+</div>
+{cit_html}
+<h2>โอกาสโกหกรายข้อ</h2>{_p_bars_svg(qs)}
+<h2>สัญญาณตลอดการทดสอบ <span class="muted small">(แถบสี = ช่วง 12 วินาทีหลังถามแต่ละข้อ)</span></h2>
+{gsr}{hr}{si}
+<h2>รายละเอียดทุกข้อ</h2>
+<table><tr><th>#</th><th>คำถาม / คำอธิบาย</th><th>ชนิด</th><th>ตอบ</th><th>ผล</th><th>P(โกหก)</th><th>คุณภาพ</th><th>สัญญาณเด่น</th></tr>
+{''.join(rows_html)}</table>
+<h2>วิธีการและข้อจำกัด</h2>
+<p class="small">นาฬิกาวัดสัญญาณ 5 ชนิด (ความนำไฟฟ้าผิว/เหงื่อ, อัตราการเต้นหัวใจ, แรงชีพจรปลายนิ้ว, การสั่นของมือ, อุณหภูมิผิว)
+เปรียบเทียบช่วง 12 วินาทีหลังถามกับ 3 วินาทีก่อนถาม แปลงเป็นคะแนนมาตรฐาน (z-score) เทียบกับการแกว่งตามธรรมชาติที่วัดตอน baseline
+แล้วรวมแบบถ่วงน้ำหนัก (ปรับน้ำหนักและเกณฑ์ให้เหมาะกับแต่ละคนจากคำถามควบคุม) ได้เป็นความน่าจะเป็นที่จะโกหก
+<b>ข้อจำกัด:</b> สัญญาณเหล่านี้บอก "ความตื่นตัว/ความเครียด" ไม่ได้บอก "การโกหก" โดยตรง คนพูดจริงแต่ตื่นเต้นอาจถูกตัดสินว่าโกหก
+และคนที่ควบคุมตัวเองได้ดีอาจผ่านได้ ผลจากอุปกรณ์นี้จึงใช้เพื่อการศึกษาและสาธิตเท่านั้น ไม่ใช่หลักฐานทางกฎหมายหรือการแพทย์</p>
+<p class="muted small">สร้างโดย Polygraph Studio · {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+</body></html>"""

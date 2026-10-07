@@ -1,0 +1,9 @@
+# Polygraph Studio - ติดตั้งด้วยการดับเบิลคลิก install.bat (หรือ python -m pip install -r requirements.txt)
+# ต้องต่ออินเทอร์เน็ตตอนติดตั้งครั้งแรก - ทำก่อนสลับไปต่อ WiFi ของนาฬิกา
+# ไม่ใช้ uvicorn[standard] (ดึงไลบรารีที่ต้องคอมไพล์ บางเครื่องติดตั้งไม่ผ่าน) จึงใส่ websockets เองแทน
+# โฟลเดอร์ ml/ (collect.py, train.py) ใช้แต่ไลบรารีมาตรฐาน ไม่ต้องติดตั้งอะไร
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12
+httpx>=0.27
+python-multipart>=0.0.9

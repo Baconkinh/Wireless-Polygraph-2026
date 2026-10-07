@@ -1,0 +1,21 @@
+# Flash map 4 MB for Wireless Polygraph Watch (ESP32-C3, 4MB flash)
+# NOTE: ASCII only. PlatformIO on Thai Windows reads this file with the cp874
+#       codec, so any Thai (UTF-8) byte here breaks the build at checkprogsize.
+#       Full Thai explanation is in README / docs instead.
+#
+#  nvs      : Preferences (settings) + EEPROM-emulation (cumulative stats, NVS blob)
+#  otadata  : selects boot slot app0/app1 + OTA rollback state
+#  app0/app1: two firmware slots; OTA writes the inactive one, bootloader rolls
+#             back automatically if the new image fails before being marked valid
+#  spiffs   : LittleFS (event log + interrogation results). Label must be "spiffs"
+#             because LittleFS.begin() looks for that partition name by default.
+#  coredump : crash image (core dump) written on panic; firmware reads the summary
+#
+#  check: 0x10000 + 0x1C0000*2 + 0x60000 + 0x10000 = 0x400000 (exactly 4 MB)
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x1C0000,
+app1,     app,  ota_1,    0x1D0000, 0x1C0000,
+spiffs,   data, spiffs,   0x390000, 0x60000,
+coredump, data, coredump, 0x3F0000, 0x10000,
