@@ -1,0 +1,2 @@
+time,subject,qid,label,label_name,quality,gsr_ok,ppg_ok,z_gsr,z_hr,z_amp,z_trm,z_tmp,d_gsr,d_hr,d_amp,d_trm,d_tmp,p_model,source
+1791379671,-,3,1,lie,100,1,1,-0.055,1.856,1.331,-3.284,-0.369,-0.0008,24.72,0.2791,-0.0676,-0.021,0.125,0
