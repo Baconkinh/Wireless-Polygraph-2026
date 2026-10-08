@@ -5,14 +5,18 @@
 // โหมด fix    = ผู้ถามบอกล่วงหน้าว่าข้อนี้ให้ตอบจริงหรือให้โกหก (รู้เฉลยตั้งแต่ก่อนถาม)
 // โหมด manual = ถามไปเลย ผู้ตอบเลือกเองว่าจะจริงหรือโกหก หมดเวลาแล้วค่อยบอกเฉลย
 // ฝั่ง backend อยู่ที่ backend/collector.py + ml/recorder.py (ตัวเดียวกับ collect_data.bat)
+// ไฟล์ที่ได้: data/result_<วันเวลา>.csv (1 แถว/ข้อ, ไฟล์เดียวที่ใช้เทรน) + data/signals/signals_<วันเวลา>.csv (ค่าสด)
+// ด้านล่างสุดมี "ประวัติทั้งหมด" (history.js) ดูทุกข้อจากทุกไฟล์ที่เคยบันทึก + ดาวน์โหลด
 import { S, on } from '../store.js';
 import { $, esc, fmt, toast, confirmModal, vinfo } from '../ui.js';
 import { post, cmd } from '../api.js';
 import { tilesHtml, paintTiles, chartsHtml, makeCharts, I } from '../widgets.js';
+import { historyHtml, mountHistory } from '../history.js';
 
-let root, updCharts = () => {}, lastShell = null;
+let root, updCharts = () => {}, lastShell = null, hist;
 const LABEL_TH = { truth: 'ตอบจริง', lie: 'โกหก', unknown: 'ไม่รู้เฉลย', aborted: 'ยกเลิก' };
 
+// สร้างหน้าครั้งแรก: ช่องค่าสด + กราฟ, การ์ดควบคุม, คำอธิบายโหมด, ประวัติ
 export function mount(el) {
   root = el;
   root.innerHTML = `
@@ -29,26 +33,44 @@ export function mount(el) {
         <div class="card"><h3>${I('list')} ประวัติรอบนี้</h3><div id="cl-hist" class="small muted">ยังไม่มีข้อ</div></div>
         <div class="card"><h3>${I('doc')} บันทึกการทำงาน</h3><pre class="log" id="cl-log">-</pre></div>
       </div>
-    </div>`;
+    </div>
+    <div style="margin-top:16px">${historyHtml('cl')}</div>`;
   updCharts = makeCharts(root, 'cl');
+  hist = mountHistory(root, 'cl');
   on('vitals', paintLive);
   on('collect', render);
   on('snapshot', render);
   on('lie', () => paintTiles(root, 'cl', true));
   render();
 }
-export function show() { render(); paintLive(); }
+// กลับมาที่หน้านี้: วาดสถานะล่าสุด + โหลดประวัติใหม่
+export function show() { render(); paintLive(); if (hist) hist.refresh(); }
+// ออกจากหน้านี้ (ไม่ต้องทำอะไร)
 export function hide() {}
 
 // ---------------------------------------------------------------- โครงหน้า (สร้างใหม่เมื่อเริ่ม/จบรอบเท่านั้น)
 function render() {
   if (!root) return;
   const c = S.collect || {};
-  const shell = c.active ? 'run' : 'setup';
-  if (shell !== lastShell) { lastShell = shell; shell === 'run' ? renderRun() : renderSetup(); }
+  // รอบโหมด live เป็นของหน้า "ใช้งานจริง" -> หน้านี้แสดงว่าไม่ว่าง
+  const shell = !c.active ? 'setup' : (c.run && c.run.mode === 'live') ? 'busy' : 'run';
+  if (shell !== lastShell) {
+    lastShell = shell;
+    if (shell === 'run') renderRun(); else if (shell === 'busy') renderBusy(); else renderSetup();
+  }
   if (shell === 'run') paintRun();
 }
 
+// แสดงเมื่อหน้า "ใช้งานจริง" กำลังใช้นาฬิกา (ถามได้ทีละรอบ)
+function renderBusy() {
+  $('#cl-main', root).innerHTML = `<h3>${I('alert')} หน้า "ใช้งานจริง" กำลังใช้นาฬิกาอยู่</h3>
+    <p>นาฬิกาถามได้ทีละรอบ — จบรอบใช้งานจริงก่อน แล้วค่อยเริ่มเก็บข้อมูล</p>
+    <div class="row"><button class="btn" onclick="goto('use')">ไปหน้าใช้งานจริง</button>
+      <button class="btn danger" id="cl-stop-other">${I('x')} จบรอบนั้น</button></div>`;
+  $('#cl-stop-other', root).onclick = () => post('/api/collect/stop');
+}
+
+// ฟอร์มเริ่มรอบ: ชื่อผู้ตอบ/ผู้ถาม + โหมด fix/manual
 function renderSetup() {
   $('#cl-main', root).innerHTML = `<h3>${I('db')} เริ่มรอบเก็บข้อมูล</h3>
     <div class="form-grid">
@@ -58,8 +80,8 @@ function renderSetup() {
         <option value="fix">fix — บอกล่วงหน้าว่าข้อนี้ให้โกหก</option>
         <option value="manual">manual — ถามก่อน ค่อยบอกเฉลยทีหลัง</option></select></label>
     </div>
-    <p class="small muted">ไฟล์ CSV จะถูกสร้างในโฟลเดอร์ <span class="mono">Polygraph-Studio\\data\\</span> เมื่อเริ่มข้อแรกเท่านั้น
-      (กดเริ่มแล้วไม่ได้ถามสักข้อ = ไม่มีไฟล์ใหม่ ไม่เปลืองพื้นที่)</p>
+    <p class="small muted">ไฟล์ <span class="mono">Polygraph-Studio\\data\\result_&lt;วันเวลา&gt;.csv</span> จะถูกสร้างเมื่อเริ่มข้อแรกเท่านั้น
+      (กดเริ่มแล้วไม่ได้ถามสักข้อ = ไม่มีไฟล์ใหม่) — เก็บเสร็จแล้วไปเทรนที่หน้า "ข้อมูล &amp; เทรน AI" หรือ train_ai.bat</p>
     <button class="btn primary" id="cl-start">${I('pulse')} เริ่มเก็บข้อมูล</button>`;
   $('#cl-start', root).onclick = async () => {
     const subject = $('#cl-subject', root).value.trim();
@@ -69,6 +91,7 @@ function renderSetup() {
   };
 }
 
+// โครงการ์ดควบคุมระหว่างรอบ (ปุ่ม baseline, ถาม, ยกเลิก, จบรอบ)
 function renderRun() {
   $('#cl-main', root).innerHTML = `<h3>${I('db')} ควบคุมการเก็บข้อมูล <span class="right"><select class="input sm-input" id="cl-mode2">
       <option value="fix">Mode : fix</option><option value="manual">Mode : manual</option></select></span></h3>
@@ -89,7 +112,7 @@ function renderRun() {
   $('#cl-base', root).onclick = async () => { const r = await cmd('baseline'); if (r && r.ok) toast('เริ่มวัดค่าปกติ — นั่งนิ่ง ๆ ~30 วินาที', 'ok'); };
   $('#cl-abort', root).onclick = () => post('/api/collect/abort');
   $('#cl-stop', root).onclick = async () => {
-    if (await confirmModal('จบรอบเก็บข้อมูล?', '<p>ไฟล์ CSV ถูกบันทึกครบแล้ว นำไปเทรนได้ด้วย train_ai.bat</p>', 'จบรอบ')) post('/api/collect/stop');
+    if (await confirmModal('จบรอบเก็บข้อมูล?', '<p>ทุกข้อถูกบันทึกใน data/result_*.csv แล้ว — ไปเทรนได้ที่หน้า "ข้อมูล &amp; เทรน AI" หรือ train_ai.bat</p>', 'จบรอบ')) post('/api/collect/stop');
   };
   $('#cl-mode2', root).onchange = async (e) => {
     const r = await post('/api/collect/mode', { mode: e.target.value });
@@ -111,7 +134,7 @@ function paintRun() {
     <div class="kv">
       <span>${cur ? 'ข้อที่กำลังเก็บ' : 'ข้อถัดไป'}</span><span><b>ข้อที่ ${q.question_no}</b> &nbsp;(qid ${q.watch_qid})
         ${cur && cur.label ? ` · เฉลย <span class="badge ${cur.label === 'lie' ? 'b-lie' : 'b-truth'}">${LABEL_TH[cur.label]}</span>` : ''}</span>
-      <span>บันทึกลงไฟล์</span><span class="mono">data/${esc(run.files.signals)}${fileNote}<br>data/${esc(run.files.results)} · data/${esc(run.files.training)}</span>
+      <span>บันทึกลงไฟล์</span><span class="mono">data/${esc(run.files.results)}${fileNote}<br><span class="muted">ค่าสด: data/${esc(run.files.signals)}</span></span>
       <span>ใครถาม → ใครตอบ</span><span>${esc(run.operator)} → <b>${esc(run.subject)}</b></span>
       <span>โหมด</span><span>${run.mode === 'fix' ? 'fix — บอกเฉลยก่อนถาม' : 'manual — ผู้ตอบบอกเฉลยหลังตอบ'}</span>
     </div>`;
@@ -152,6 +175,7 @@ function paintRun() {
   paintLive();
 }
 
+// อัปเดตทุกครั้งที่ได้ค่าสด: ข้อความสถานะ, เส้นนับถอยหลัง, เปิด/ปิดปุ่มตามสถานะนาฬิกา
 function paintLive() {
   if (!root) return;
   paintTiles(root, 'cl', true);

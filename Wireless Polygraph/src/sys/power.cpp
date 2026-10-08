@@ -38,6 +38,7 @@ bool s_lowLogged = false;
   esp_deep_sleep_start();
 }
 
+// เขียน log ที่ค้างในคิวลงแฟลชก่อนหลับ (ไม่งั้นหาย)
 void drainLogsToFlash() {
   // log ที่ค้างในคิวเขียนลงแฟลชก่อนหลับ (ไม่งั้นหายไปกับ RAM)
   LogMsg m;
@@ -45,6 +46,7 @@ void drainLogsToFlash() {
     storage::appendEvent(m.type, m.text);
 }
 
+// light sleep: หยุดเซนเซอร์/WiFi, หลับจนกดปุ่ม (หรือครบเวลา) แล้วเปิดทุกอย่างกลับ
 void doLightSleep(uint32_t maxSec) {
   app::logEvent("SLEEP", "light sleep (wake: BOOT button%s)", maxSec ? " or timer" : "");
   drainLogsToFlash();
@@ -141,6 +143,7 @@ void handleWakeEarly() {
 
 void begin() { setEco(storage::settings().eco); }
 
+// โหมด ECO: ลด CPU เหลือ 80 MHz + หรี่ LED (ประหยัดไฟ)
 void setEco(bool on) {
   s_eco = on;
   setCpuFrequencyMhz(on ? CPU_MHZ_ECO : CPU_MHZ_NORMAL);
@@ -150,24 +153,28 @@ void setEco(bool on) {
 
 bool eco() { return s_eco; }
 
+// ขอ light sleep (ทำจริงใน supervisor หลัง 400 ms ให้ HTTP ตอบกลับก่อน)
 void requestLightSleep(uint32_t maxSec) {
   s_reqSec = maxSec;
   s_reqAt = millis();
   s_req = 1;
 }
 
+// ขอ deep sleep (ตื่นด้วย timer = บูตใหม่)
 void requestDeepSleep(uint32_t sec) {
   s_reqSec = sec;
   s_reqAt = millis();
   s_req = 2;
 }
 
+// ขอรีสตาร์ทพร้อมบันทึกสาเหตุ (เช่น ผู้ใช้สั่ง, OTA) ลงกล่องดำ
 void requestRestart(uint32_t plannedReason) {
   s_reqReason = plannedReason;
   s_reqAt = millis();
   s_req = 3;
 }
 
+// supervisor เรียกเป็นระยะ: ทำคำขอที่ค้าง, หลับอัตโนมัติเมื่อไม่มีใครใช้, ตรวจแบตต่ำ
 void service() {
   const uint32_t now = millis();
 
@@ -229,6 +236,7 @@ void service() {
 uint32_t lightSleeps() { return s_lightSleeps; }
 uint32_t lastLightSleepMs() { return s_lastLightMs; }
 
+// สาเหตุที่ตื่นเป็นข้อความ (timer / ปุ่ม / ...)
 const char* wakeCauseName(uint32_t cause) {
   switch ((esp_sleep_wakeup_cause_t)cause) {
     case ESP_SLEEP_WAKEUP_TIMER: return "timer";

@@ -25,6 +25,7 @@ bool scorer(const lie::Result& r, float& p, void*) {
 }
 }  // namespace
 
+// ตอนบูต: โหลดโมเดลจาก NVS (ถ้ามีและผ่านการตรวจ) แล้วผูก scorer ให้ LieEngine เรียกใช้
 void begin() {
   ml::Model m;
   if (storage::loadModel(m)) {
@@ -36,6 +37,7 @@ void begin() {
 
 uint8_t mode() { return storage::settings().mode; }
 
+// ตั้งโหมด train (เก็บข้อมูล) / detect (ใช้งานจริง) แล้วบันทึกลง NVS
 void setMode(uint8_t m) {
   storage::settings().mode = m ? MODE_TRAIN : MODE_DETECT;
   storage::saveSettings();
@@ -45,6 +47,7 @@ const char* modeName(uint8_t m) { return m == MODE_TRAIN ? "train" : "detect"; }
 
 bool hasModel() { return s_loaded; }
 
+// ติดตั้งโมเดลใหม่: seal (ใส่ CRC32) -> ตรวจ -> บันทึก NVS -> สลับใช้ขณะถือ engineMutex
 bool install(const ml::Model& in) {
   ml::Model m = in;
   ml::seal(m);
@@ -58,6 +61,7 @@ bool install(const ml::Model& in) {
   return true;
 }
 
+// ลบโมเดลทั้งใน RAM และ NVS -> LieEngine กลับไปใช้สูตร
 void clearModel() {
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
   s_loaded = false;
@@ -66,6 +70,7 @@ void clearModel() {
   storage::clearModel();
 }
 
+// สำเนาโมเดลปัจจุบัน (อ่านขณะถือ mutex กันอ่านระหว่างกำลังเปลี่ยน)
 ml::Model modelCopy() {
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
   ml::Model m = s_model;
@@ -73,6 +78,7 @@ ml::Model modelCopy() {
   return m;
 }
 
+// ตั้งชื่อผู้ตอบ (ตัดอักขระที่ทำให้ CSV พัง และไม่ตัดกลางตัวอักษรไทย UTF-8)
 void setSubject(const char* name) {
   size_t i = 0;
   // เก็บเฉพาะตัวอักษรที่ไม่ทำให้ CSV พัง (ตัด , " ขึ้นบรรทัดใหม่)
@@ -97,6 +103,7 @@ void setSubject(const char* name) {
 
 const char* subject() { return s_subject; }
 
+// ผล 1 ข้อ -> 1 บรรทัด CSV ข้อมูลเทรน (เฉพาะข้อควบคุมที่รู้เฉลยและสัญญาณใช้ได้)
 bool makeTrainRow(const lie::Result& r, char* out, size_t n, int& label) {
   if (r.kind == lie::Kind::ControlTruth) label = 0;
   else if (r.kind == lie::Kind::ControlLie) label = 1;
@@ -115,6 +122,7 @@ bool makeTrainRow(const lie::Result& r, char* out, size_t n, int& label) {
   return true;
 }
 
+// ส่วน JSON ของ GET /api/ml: โหมด, ชื่อผู้ตอบ, จำนวนข้อมูลเทรน, ข้อมูลโมเดล
 void appendJson(Json& j) {
   uint32_t t = 0, l = 0;
   storage::trainCounts(t, l);

@@ -63,6 +63,7 @@ def load_watch_pages() -> Dict[str, str]:
 
 
 def r2(x, d=3):
+    """ปัดทศนิยมสำหรับส่ง JSON (None/NaN -> null)"""
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else round(x, d)
 
 
@@ -70,6 +71,7 @@ class Subject:
     """สรีรวิทยาจำลองของผู้ถูกทดสอบ 1 คน"""
 
     def __init__(self):
+        """ผู้ถูกทดสอบจำลอง: สุ่มค่าปกติของชีพจร/GSR/อุณหภูมิ ให้แต่ละคนไม่เหมือนกัน"""
         self.hr_base = random.uniform(66, 80)
         self.gsr_base = random.uniform(1.4, 2.8)
         self.temp_base = random.uniform(32.8, 34.0)
@@ -83,9 +85,11 @@ class Subject:
         self.drift = 0.0
 
     def respond(self, t: float, gain: float):
+        """จำลองการตอบสนองของร่างกาย (เช่น ตอนโกหก) เริ่มที่เวลา t ความแรง gain"""
         self.responses.append([t, gain])
 
     def shape(self, t: float) -> float:
+        """รวมการตอบสนองทั้งหมด ณ เวลา t (แฝง ~1 วินาที ขึ้นแล้วค่อย ๆ ลด) — 0 = ปกติ"""
         s = 0.0
         for start, gain in self.responses:
             x = t - start - 1.0                      # แฝง ~1 วินาที แล้วค่อยตอบสนอง
@@ -95,11 +99,16 @@ class Subject:
         return s
 
     def hr(self, t: float, sh: float) -> float:
+        """ชีพจรจำลอง = ค่าปกติ + การแกว่งตามการหายใจ + ส่วนที่เพิ่มตอนตื่นเต้น"""
         return self.hr_base + 3.0 * math.sin(2 * math.pi * 0.25 * t) + 10.0 * sh
 
 
 class VirtualWatch:
+    """นาฬิกาจำลองทั้งเครื่อง: UDP (ค่าสด/คลื่น/เหตุการณ์) + REST API ชุดเดียวกับเฟิร์มแวร์ + LieEngine ฉบับ Python
+    ใช้ซ้อม/ทดสอบ Studio และ collect_data.bat ได้โดยไม่ต้องมีบอร์ด (run_demo_simulator.bat)
+    """
     def __init__(self, udp_port: int, http_port: int, speed: float = 1.0):
+        """สร้างสถานะเริ่มต้นของนาฬิกาจำลอง (เหมือนเพิ่งเปิดเครื่อง)"""
         self.udp_port, self.http_port = udp_port, http_port
         # เร่งเวลา (เช่น 5 = baseline 30 วินาทีเสร็จใน 6 วินาที) ไว้ทดสอบ/เก็บข้อมูลตัวอย่างเร็ว ๆ
         self.speed = max(0.1, min(20.0, speed))
@@ -148,6 +157,7 @@ class VirtualWatch:
 
     @staticmethod
     def default_settings():
+        """ค่าตั้งเริ่มต้น (ตรงกับเฟิร์มแวร์)"""
         # w เท่ากับเฟิร์มแวร์ v2.1 (ลดน้ำหนัก GSR — คนไม่ได้มีเหงื่อตลอดเวลา)
         return {"baselineSec": 30, "windowSec": 12, "preSec": 3, "s0": 2.0, "k": 1.5, "lieP": 0.65,
                 "truthP": 0.35, "w": [0.20, 0.35, 0.25, 0.12, 0.08], "contactThr": 50000, "irLed": 31,
@@ -162,15 +172,18 @@ class VirtualWatch:
         return self.model.prob(pm.features_from(r.okMask, r.z, r.feat))
 
     def train_counts(self):
+        """จำนวนข้อมูลเทรนที่นาฬิกาจำลองบันทึกเอง (ตอบจริง, โกหก)"""
         n1 = sum(1 for ln in self.train_lines if ln.split(",")[3] == "1")
         return len(self.train_lines) - n1, n1
 
     def train_bytes(self) -> int:
+        """ขนาดไฟล์ /train.csv จำลอง (ไบต์)"""
         if not self.train_lines:
             return 0
         return len((",".join(pm.TRAIN_HEADER) + "\n").encode()) + sum(len(ln.encode()) + 1 for ln in self.train_lines)
 
     def apply_settings(self):
+        """นำค่าตั้งไปใช้กับ LieEngine จำลอง"""
         c = le.Config()
         s = self.settings
         c.baselineSec, c.windowSec, c.preSec = s["baselineSec"], s["windowSec"], s["preSec"]
@@ -180,9 +193,11 @@ class VirtualWatch:
         self.eco = bool(s["eco"])
 
     def uptime(self) -> float:
+        """เวลาทำงานจำลอง (วินาที) — คูณ speed เมื่อเร่งเวลา"""
         return (time.time() - self.t0) * self.speed
 
     def log(self, typ: str, text: str):
+        """จด log เหตุการณ์ (เก็บ 400 บรรทัดล่าสุด เหมือน events.log ในนาฬิกา) และพิมพ์ออกจอ"""
         self.events_log.append(f"{int(self.uptime())},{int(time.time())},{typ},{text}")
         self.events_log = self.events_log[-400:]
         print(f"[{self.uptime():7.1f}s] {typ:<9} {text}")
@@ -192,6 +207,7 @@ class VirtualWatch:
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr):
+        """รับ UDP จากคอม: "hello" (ลงทะเบียนผู้รับข้อมูล + ตั้งเวลา), ping (วัดความหน่วง)"""
         if time.time() < self.paused_until:
             return                                # "หลับ/รีบูต" อยู่ -> ไม่ตอบ
         msg = data.decode(errors="replace").strip()
@@ -215,16 +231,20 @@ class VirtualWatch:
             self.send(addr, {"t": "pong", "n": msg[5:25], "ms": int(self.uptime() * 1000)})
 
     def error_received(self, exc):
+        """asyncio เรียกเมื่อ UDP error — ไม่ต้องทำอะไร"""
         pass
 
     def connection_lost(self, exc):
+        """asyncio เรียกตอนปิด socket — ไม่ต้องทำอะไร"""
         pass
 
     def send(self, addr, obj):
+        """ส่ง JSON 1 ก้อนทาง UDP ไปที่ addr"""
         if self.transport:
             self.transport.sendto(json.dumps(obj, separators=(",", ":")).encode(), addr)
 
     def send_all(self, obj, wave_only=False):
+        """ส่งให้ทุกคอมที่ทักทายมาภายใน 10 วินาที (ผู้รับที่เงียบนานถูกลบ)"""
         now = time.time()
         for addr, c in list(self.clients.items()):
             if now - c["last"] > 10:
@@ -246,6 +266,7 @@ class VirtualWatch:
                 self.transport.sendto(line.encode(), addr)
 
     def event(self, ev: str, **data):
+        """ส่งเหตุการณ์ (เลข eid เพิ่มทีละ 1 ให้ผู้รับตัดซ้ำได้)"""
         self.eid += 1
         msg = dict({"t": "e", "eid": self.eid, "ev": ev}, **data)
         self.send_all(msg)
@@ -265,6 +286,7 @@ class VirtualWatch:
             self.step(dt)
 
     def step(self, dt: float):
+        """1 ก้าวเวลา (10 ms): สร้างคลื่นชีพจร ทุก 20 ก้าว (0.2 วินาที) สร้างค่าสด 1 เฟรม"""
         s = self.subject
         self.n100 += 1
         t = self.uptime()
@@ -300,6 +322,7 @@ class VirtualWatch:
             self.frame(t, sh, hr, amp)
 
     def frame(self, t: float, sh: float, hr: float, amp: float):
+        """สร้างค่าสด 1 เฟรม (GSR, อุณหภูมิ, การสั่น, ...) ป้อน LieEngine แล้วส่งให้คอม"""
         s = self.subject
         s.drift += random.gauss(0, 0.0008)
         gsr = s.gsr_base + 0.0015 * t / 60 + s.drift + 0.5 * sh + random.gauss(0, 0.006)
@@ -363,6 +386,7 @@ class VirtualWatch:
             self.send_legacy_csv()
 
     def result_event(self, r: le.Result):
+        """ได้ผลคำถาม 1 ข้อ: นับสถิติ, ส่งเหตุการณ์ result, บันทึกข้อมูลเทรน (ถ้าอยู่โหมด train)"""
         j = r.to_json()
         self.stats["questions"] += 1
         key = {"lie": "lies", "truth": "truths", "inconclusive": "inconclusive"}.get(j["verdict"], "invalid")
@@ -392,6 +416,7 @@ class VirtualWatch:
         self.pending_reboot = (time.time() + delay, reason, planned, task, coredump)
 
     def do_reboot(self, reason: str, planned: str, task: str, coredump):
+        """จำลองการรีบูต (นับบูต, จำสาเหตุ/coredump) เหมือนเฟิร์มแวร์"""
         self.prev_uptime = int(self.uptime())
         self.pending_reboot = None
         self.boot += 1
@@ -413,6 +438,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
     app = FastAPI(title="Virtual Polygraph Watch", docs_url="/docs")
 
     def ok(msg=None, **extra):
+        """ตอบ JSON {ok: true, msg}"""
         d = {"ok": True}
         if msg:
             d["msg"] = msg
@@ -420,6 +446,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
         return d
 
     def fail(code, err, msg):
+        """ตอบ JSON error {ok: false, error, msg} พร้อม HTTP status"""
         return JSONResponse({"ok": False, "error": err, "msg": msg}, status_code=code)
 
     ERR_TH = {"NO_BASELINE": "ต้องวัด baseline ก่อน", "QUESTION_ACTIVE": "กำลังวัดคำถามอยู่ รอให้ครบเวลาก่อน",
@@ -430,20 +457,24 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def root():
+        """หน้าเว็บในนาฬิกา (HTML เดียวกับใน web_page.h ของเฟิร์มแวร์)"""
         return HTMLResponse(pages["INDEX_HTML"])
 
     @app.get("/update", response_class=HTMLResponse)
     async def update_page():
+        """หน้าอัปโหลดเฟิร์มแวร์ (OTA)"""
         return HTMLResponse(pages.get("UPDATE_HTML", ""))
 
     @app.middleware("http")
     async def asleep(request: Request, call_next):
+        """ระหว่าง "หลับ/รีบูต" จำลอง ตอบทุก request ว่าไม่ว่าง (เหมือนนาฬิกาจริงที่ติดต่อไม่ได้)"""
         if time.time() < vw.paused_until:
             return JSONResponse({"ok": False, "error": "ASLEEP", "msg": "นาฬิกาจำลองกำลังรีบูต/หลับ"}, 503)
         return await call_next(request)
 
     @app.get("/api/info")
     async def info():
+        """GET /api/info: ข้อมูลเครื่อง"""
         cd = vw.coredump or {}
         return {"name": "Wireless Polygraph Watch", "fw": FW_VERSION, "build": "simulated", "id": DEVICE_ID,
                 "mac": "SI:MU:LA:TE:D0:01", "chip": "ESP32-C3 (simulated)", "chipRev": 4, "cores": 1,
@@ -460,6 +491,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/api/live")
     async def live():
+        """GET /api/live: ค่าสดล่าสุด"""
         v = dict(getattr(vw, "live", {}) or {})
         v.pop("t", None)
         v.update({"fw": FW_VERSION, "uptime": int(vw.uptime()), "clients": len(vw.clients)})
@@ -467,10 +499,12 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/api/lie")
     async def lie(n: int = 24):
+        """GET /api/lie: สถานะ LieEngine + ผล n ข้อล่าสุด"""
         return vw.engine.lie_json(max(0, min(24, n)))
 
     @app.post("/api/lie/baseline")
     async def baseline(sec: float = 0):
+        """POST /api/lie/baseline: เริ่มวัดค่าปกติ"""
         if not vw.engine.start_baseline(sec):
             return fail(409, vw.engine.err, ERR_TH.get(vw.engine.err, vw.engine.err))
         vw.event("baseline_start", sec=sec or vw.engine.cfg.baselineSec)
@@ -479,6 +513,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/lie/question")
     async def question(qid: Optional[int] = None, kind: str = "test", label: str = ""):
+        """POST /api/lie/question: เริ่มวัด 1 ข้อ (qid, kind)"""
         if kind not in le.KIND_NAMES:
             return fail(400, "BAD_KIND", "kind ต้องเป็น test, truth, lie หรือ warmup")
         if qid is None:                       # ไม่ระบุ qid -> นับต่อเอง (เหมือน s_autoQid ในเฟิร์มแวร์)
@@ -520,18 +555,21 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/lie/answer")
     async def answer(ans: str = "yes"):
+        """POST /api/lie/answer: บันทึกคำตอบ ใช่/ไม่ใช่"""
         if not vw.engine.mark_answer(ans != "no"):
             return fail(409, vw.engine.err, ERR_TH.get(vw.engine.err, vw.engine.err))
         return ok("answer " + ans)
 
     @app.post("/api/lie/abort")
     async def abort():
+        """POST /api/lie/abort: ยกเลิกสิ่งที่กำลังวัด"""
         vw.engine.abort()
         vw.event("abort")
         return ok("aborted")
 
     @app.post("/api/lie/reset")
     async def reset():
+        """POST /api/lie/reset: เริ่มผู้ตอบคนใหม่ (ล้าง baseline/ข้อควบคุม)"""
         vw.engine.reset_session()
         vw.last_seq_seen = vw.engine.resultSeq
         vw.event("session_reset")
@@ -539,10 +577,12 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/api/config")
     async def config_get():
+        """GET /api/config: ค่าตั้ง"""
         return vw.settings
 
     @app.post("/api/config")
     async def config_set(request: Request):
+        """POST /api/config: เปลี่ยนค่าตั้ง (ตรวจช่วงค่าเหมือนเฟิร์มแวร์)"""
         q = dict(request.query_params)
         s = dict(vw.settings)
         ranges = {"baselineSec": (20, 90), "windowSec": (6, 20), "preSec": (1, 5), "s0": (-5, 10), "k": (0.1, 10),
@@ -571,12 +611,14 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/config/reset")
     async def config_reset():
+        """POST /api/config/reset: คืนค่าเริ่มต้น"""
         vw.settings = vw.default_settings()
         vw.apply_settings()
         return vw.settings
 
     @app.get("/api/system")
     async def system():
+        """GET /api/system: ข้อมูล FreeRTOS task, watchdog, แฟลช, พลังงาน (จำลอง)"""
         up = vw.uptime()
         cpu = lambda base: round(base * (0.5 if vw.eco else 1.0) + random.uniform(-0.05, 0.05), 2)  # noqa: E731
         tasks = [
@@ -643,6 +685,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/api/logs")
     async def logs(file: str = "events"):
+        """GET /api/logs: ไฟล์ log เหตุการณ์/ผลคำถาม"""
         if file.startswith("results"):
             rows = ["epoch,uptime_s,seq,qid,kind,verdict,p_lie,score,quality,reasons"]
             for r in vw.engine.res:
@@ -653,11 +696,13 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/logs/clear")
     async def logs_clear():
+        """POST /api/logs/clear: ล้าง log"""
         vw.events_log = []
         return ok("logs cleared")
 
     @app.post("/api/stats/reset")
     async def stats_reset():
+        """POST /api/stats/reset: ล้างสถิติสะสม (ยกเว้นจำนวนบูต)"""
         for k in vw.stats:
             if k != "bootCount":
                 vw.stats[k] = 0
@@ -665,6 +710,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/power")
     async def power(mode: str = "", sec: int = 0):
+        """POST /api/power: โหมดประหยัดไฟ / หลับ"""
         if mode in ("eco", "normal"):
             vw.settings["eco"] = mode == "eco"
             vw.eco = mode == "eco"
@@ -682,11 +728,13 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/restart")
     async def restart():
+        """POST /api/restart: รีสตาร์ท"""
         vw.schedule_reboot(0.4, "SOFTWARE", "user_restart", "user")
         return ok("restarting")
 
     @app.post("/api/demo")
     async def demo(type: str = "", confirm: str = ""):
+        """POST /api/demo: สาธิต watchdog แต่ละชั้น (ทำให้ค้างแล้วรีเซ็ต)"""
         plans = {"twdt": (8.0, "TASK_WDT", "demo_task_wdt", "sensor", None,
                           "sensor task จะค้าง -> Task WDT รีเซ็ตใน ~8 s"),
                  "hwwdt": (12.0, "PANIC", "demo_hw_timer_wdt", "supervisor", None,
@@ -709,6 +757,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/update")
     async def update(request: Request):
+        """POST /update: รับไฟล์เฟิร์มแวร์ (OTA) แล้วรีบูต"""
         body = await request.body()
         vw.stats["otaUpdates"] += 1
         vw.log("OTA", f"web upload ok ({len(body)} bytes) -> reboot")
@@ -727,6 +776,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.get("/api/ml")
     async def ml_get():
+        """GET /api/ml: โหมด train/detect, ข้อมูลเทรนในเครื่อง, โมเดลที่ติดตั้ง"""
         n0, n1 = vw.train_counts()
         m = {"loaded": vw.model is not None}
         if vw.model is not None:
@@ -738,6 +788,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/ml/mode")
     async def ml_mode(mode: str = ""):
+        """POST /api/ml/mode: สลับโหมดเก็บข้อมูล (train) / ใช้งานจริง (detect)"""
         if mode not in ("train", "detect"):
             return fail(400, "BAD_MODE", "mode ต้องเป็น train หรือ detect")
         vw.settings["mode"] = 1 if mode == "train" else 0
@@ -747,11 +798,13 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/ml/subject")
     async def ml_subject(name: str = ""):
+        """POST /api/ml/subject: ตั้งชื่อผู้ตอบ (เขียนลงข้อมูลเทรนของนาฬิกา)"""
         vw.ml_subject = pm.clean_subject(name)
         return ok(vw.ml_subject)
 
     @app.post("/api/ml/model")
     async def ml_model(request: Request):
+        """POST /api/ml/model: ติดตั้งโมเดล AI (ตรวจรูปแบบเหมือนเฟิร์มแวร์)"""
         f = await form(request)
         feats = [x.strip() for x in f.get("features", "").split(",") if x.strip()]
         if not feats or len(feats) > pm.FW_MAX_FEATURES or any(x not in pm.FEATURES for x in feats):
@@ -774,12 +827,14 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/ml/model/clear")
     async def ml_model_clear():
+        """POST /api/ml/model/clear: ลบโมเดล"""
         vw.model, vw.model_info = None, {}
         vw.log("ML", "model removed")
         return ok("ลบโมเดลแล้ว กลับไปใช้สูตรมาตรฐาน")
 
     @app.get("/api/ml/data.csv")
     async def ml_data():
+        """GET /api/ml/data.csv: ดาวน์โหลดข้อมูลที่นาฬิกาบันทึกเอง"""
         if not vw.train_lines:
             return fail(404, "NO_DATA", "ยังไม่มีข้อมูลเทรน — เปลี่ยนเป็นโหมดเก็บข้อมูลแล้วถามคำถามที่รู้เฉลยก่อน")
         text = ",".join(pm.TRAIN_HEADER) + "\n" + "\n".join(vw.train_lines) + "\n"
@@ -788,6 +843,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/ml/data/clear")
     async def ml_data_clear(confirm: str = ""):
+        """POST /api/ml/data/clear: ล้างข้อมูลเทรนในนาฬิกา (ต้อง confirm=yes)"""
         if confirm != "yes":
             return fail(400, "NEED_CONFIRM", "ข้อมูลเทรนจะหายทั้งหมด! เพิ่ม confirm=yes")
         vw.train_lines = []
@@ -795,6 +851,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/sleep")
     async def sleep_(request: Request):
+        """POST /api/sleep: ตั้งค่าการหลับอัตโนมัติ / สั่งหลับทันที"""
         f = await form(request)
         if "auto" in f:
             try:
@@ -817,6 +874,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/wifi")
     async def wifi(level: int = -1):
+        """POST /api/wifi: ระดับกำลังส่ง WiFi 0-2"""
         if not 0 <= level <= 2:
             return fail(400, "BAD_VALUE", "level ต้องเป็น 0 (ต่ำ), 1 (กลาง) หรือ 2 (สูง)")
         vw.settings["wifiPower"] = level
@@ -824,6 +882,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/api/time")
     async def set_time(epoch: int = 0):
+        """POST /api/time: ตั้งเวลาจริง (นาฬิกาจำลองใช้เวลาคอมอยู่แล้ว)"""
         if not 1600000000 <= epoch <= 2147483000:
             return fail(400, "BAD_VALUE", "epoch ไม่ถูกต้อง")
         return ok("time set")      # นาฬิกาจำลองใช้เวลาของคอมอยู่แล้ว
@@ -831,6 +890,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
     # ---------------------------------------------------------- ปุ่มควบคุมผู้ถูกทดสอบจำลอง
     @app.post("/sim/mode")
     async def sim_mode(mode: str = "random"):
+        """ปุ่มควบคุมนาฬิกาจำลอง: ผู้ตอบจำลองโกหก/พูดจริง/สุ่ม/ตื่นเต้นตลอด"""
         if mode not in ("random", "lie", "truth", "nervous"):
             return fail(400, "BAD_MODE", "mode: random / lie / truth / nervous")
         vw.mode = mode
@@ -838,31 +898,37 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
     @app.post("/sim/next")
     async def sim_next(mode: str = "lie"):
+        """กำหนดว่าคำถามจริงข้อถัดไปให้ผู้ตอบจำลองโกหกหรือพูดจริง"""
         vw.next_override = mode
         return ok(f"คำถามจริงข้อถัดไป: {mode}")
 
     @app.post("/sim/contact")
     async def sim_contact(ppg: int = 1, gsr: int = 1):
+        """จำลองเซนเซอร์หลุด/แตะผิว (ทดสอบกรณีสัญญาณหาย)"""
         vw.subject.ppg_contact, vw.subject.gsr_contact = bool(ppg), bool(gsr)
         return ok(f"PPG={'แตะ' if ppg else 'หลุด'} GSR={'แตะ' if gsr else 'หลุด'}")
 
     @app.post("/sim/motion")
     async def sim_motion(level: float = 0.01):
+        """จำลองการขยับตัว"""
         vw.subject.motion = max(0.0, min(5.0, level))
         return ok(f"motion={level}")
 
     @app.post("/sim/secret")
     async def sim_secret(n: int = 0):
+        """สุ่มเลขลับใหม่ (เกมทายเลขสาธิต)"""
         vw.secret = n if 1 <= n <= 5 else random.randint(1, 5)
         return ok("ตั้งเลขลับใหม่แล้ว (ซ่อนไว้)")
 
     @app.post("/sim/new_subject")
     async def sim_new_subject():
+        """เปลี่ยนเป็นผู้ตอบจำลองคนใหม่"""
         vw.subject = Subject()
         return ok("เปลี่ยนผู้ถูกทดสอบจำลองคนใหม่")
 
     @app.get("/sim/state")
     async def sim_state():
+        """สถานะของตัวจำลอง (โหมด, การสัมผัส, คำตอบจริงล่าสุด)"""
         return {"mode": vw.mode, "next": vw.next_override, "secret": vw.secret,
                 "ppg": vw.subject.ppg_contact, "gsr": vw.subject.gsr_contact, "motion": vw.subject.motion,
                 "truth": list(reversed(vw.truth_log[-20:]))}
@@ -871,6 +937,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
 
 
 async def main_async(udp_port: int, http_port: int, speed: float = 1.0):
+    """เปิด UDP + เว็บเซิร์ฟเวอร์ของนาฬิกาจำลอง แล้ววนสร้างสัญญาณ 100 ครั้ง/วินาที"""
     vw = VirtualWatch(udp_port, http_port, speed)
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(lambda: vw, local_addr=("127.0.0.1", udp_port))
@@ -886,6 +953,7 @@ async def main_async(udp_port: int, http_port: int, speed: float = 1.0):
 
 
 def main():
+    """จุดเริ่ม: อ่าน argument (--udp, --http, --speed) แล้วรัน main_async"""
     try:
         sys.stdout.reconfigure(errors="replace")
     except (AttributeError, ValueError):

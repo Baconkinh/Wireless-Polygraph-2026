@@ -10,6 +10,7 @@
 
 namespace dsp {
 
+// ตั้งตัวกรองชีพจร: low-pass 6 Hz (ตัด noise), high-pass 0.5 Hz (ตัด DC สำหรับกราฟ), เกณฑ์ว่าแตะผิว
 void PpgProcessor::begin(float fs, uint32_t contactThreshold) {
   fs_ = fs;
   lp_.lowpass(fs, 6.0f);        // ตัดสัญญาณรบกวนความถี่สูง แต่ยังเก็บขาขึ้นที่ชันของ systole
@@ -25,16 +26,19 @@ void PpgProcessor::begin(float fs, uint32_t contactThreshold) {
   resetBeatState();
 }
 
+// ตั้งเกณฑ์แสง IR ที่ถือว่า "แตะผิว" (ปล่อยที่ 80% กันสถานะกระพริบ)
 void PpgProcessor::setContactThreshold(uint32_t thr) {
   onThr_ = thr;
   offThr_ = thr - thr / 5;  // ปล่อยที่ 80% ของเกณฑ์แตะ: กันสถานะกระพริบตอนค่าวนอยู่แถวเกณฑ์
 }
 
+// ดัชนี perfusion (%) = แอมพลิจูดชีพจร / ระดับ DC — บอกว่าเลือดไหลเวียนปลายนิ้วมากน้อย
 float PpgProcessor::perfusion() const {
   float d = dc_.value();
   return (contact_ && d > 1.0f) ? 100.0f * ampEst_ / d : 0.0f;
 }
 
+// ล้างสถานะการหาจังหวะ (เริ่มใหม่หลังสัญญาณหลุด)
 void PpgProcessor::resetBeatState() {
   wave_ = 0.0f;
   for (int i = 0; i < kSsfW; i++) slope_[i] = 0.0f;
@@ -55,12 +59,14 @@ void PpgProcessor::resetBeatState() {
   hr_ = rmssd_ = lastIbi_ = 0.0f;
 }
 
+// ข้อมูลขาดช่วง (อ่าน FIFO ไม่ทัน/หลับ) -> ไม่ใช้ช่วงห่างที่คร่อมช่องว่างคำนวณชีพจร
 void PpgProcessor::markGap() {
   // ตัวกรองยังใช้ต่อได้ แต่ช่วงเวลาระหว่างจังหวะที่คร่อมช่องว่างเชื่อไม่ได้
   haveLastPeak_ = false;
   chainId_++;
 }
 
+// มัธยฐานของช่วงห่างระหว่างจังหวะ m ค่าล่าสุด (ทนค่าหลุดกว่าค่าเฉลี่ย)
 float PpgProcessor::medianRecentIbi(int m) const {
   float tmp[8];
   if (m > ibiCount_) m = ibiCount_;
@@ -69,6 +75,7 @@ float PpgProcessor::medianRecentIbi(int m) const {
   return median(tmp, m);
 }
 
+// ป้อนแสง IR 1 ค่า (100 Hz): ตรวจการแตะผิว -> กรอง -> หาจังหวะหัวใจด้วยความชัน (SSF) -> คืน true เมื่อเจอจังหวะ
 bool PpgProcessor::push(uint32_t irRaw) {
   n_++;
   saturated_ = irRaw >= 260000;  // 18-bit เต็มสเกล = 262143 -> ใกล้เพดาน = ยอดคลื่นถูกตัด
@@ -203,6 +210,7 @@ bool PpgProcessor::push(uint32_t irRaw) {
   return beat;
 }
 
+// รับช่วงห่างระหว่างจังหวะใหม่ (ต่างจากมัธยฐานเกิน 30% = น่าจะผิด ไม่รับ)
 void PpgProcessor::acceptIbi(float ibiMs) {
   if (ibiCount_ >= 3) {
     const float med = medianRecentIbi(5);
@@ -227,6 +235,7 @@ void PpgProcessor::acceptIbi(float ibiMs) {
   recompute();
 }
 
+// คำนวณชีพจร (bpm) และ HRV (RMSSD) ใหม่จากช่วงห่างล่าสุด
 void PpgProcessor::recompute() {
   // HR = 60000 / มัธยฐานของ IBI ล่าสุด 5 ค่า (ทนค่าหลุดได้ดีกว่าค่าเฉลี่ย)
   hr_ = (ibiCount_ >= 2) ? 60000.0f / medianRecentIbi(5) : 0.0f;

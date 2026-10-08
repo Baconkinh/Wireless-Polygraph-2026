@@ -19,6 +19,7 @@ constexpr uint8_t REG_WHO_AM_I      = 0x75;
 constexpr float   ACCEL_SCALE = 9.80665f / 16384.0f;   // ±2 g -> 16384 LSB/g -> m/s²
 }  // namespace
 
+// เขียนค่า 1 ไบต์ลง register ของ MPU
 bool Mpu6050::writeReg(uint8_t reg, uint8_t val) {
   w_->beginTransmission(addr_);
   w_->write(reg);
@@ -26,6 +27,7 @@ bool Mpu6050::writeReg(uint8_t reg, uint8_t val) {
   return w_->endTransmission() == 0;
 }
 
+// อ่านหลายไบต์ต่อเนื่องจาก register
 bool Mpu6050::readRegs(uint8_t reg, uint8_t* buf, size_t len) {
   w_->beginTransmission(addr_);
   w_->write(reg);
@@ -39,6 +41,7 @@ bool Mpu6050::readRegs(uint8_t reg, uint8_t* buf, size_t len) {
   return true;
 }
 
+// ตรวจ WHO_AM_I (รองรับ MPU6050/6500 และรุ่นเลียนแบบ), ปลุกชิป, ตั้งช่วง ±4 g + low-pass
 bool Mpu6050::begin(TwoWire& wire, uint8_t addr) {
   w_ = &wire;
   addr_ = addr;
@@ -58,6 +61,7 @@ bool Mpu6050::begin(TwoWire& wire, uint8_t addr) {
   return ok;
 }
 
+// อ่านความเร่ง 3 แกน แปลงเป็น m/s²
 bool Mpu6050::readAccel(float& ax, float& ay, float& az) {
   if (!ok_) return false;
   uint8_t b[6];
@@ -69,11 +73,13 @@ bool Mpu6050::readAccel(float& ax, float& ay, float& az) {
   return true;
 }
 
+// เข้า/ออกโหมดหลับของชิป
 bool Mpu6050::sleep(bool on) {
   if (!w_) return false;
   return writeReg(REG_PWR_MGMT_1, on ? 0x40 : 0x01);   // bit6 = SLEEP
 }
 
+// ชื่อรุ่นจาก WHO_AM_I (แสดงใน status)
 const char* Mpu6050::chipName() const {
   switch (who_) {
     case 0x68: return "MPU6050";

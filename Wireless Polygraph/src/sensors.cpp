@@ -42,12 +42,14 @@ float s_vccMv = VCC_MV_DEFAULT;
 float s_chipTemp = NAN;
 WaveChunk s_wave;
 
+// เจอจังหวะหัวใจ -> ปลุก uiTask ให้กระพริบ LED
 void notifyBeat() {
   // แจ้ง uiTask ให้กระพริบ LED ตามจังหวะหัวใจ (task notification = เบาสุดใน FreeRTOS)
   TaskHandle_t h = app::tasks[T_UI].handle;
   if (h) xTaskNotifyGive(h);
 }
 
+// อ่านค่าแสง IR/แดงจาก FIFO ของ MAX30102 (สูงสุด 32 ค่า) แล้วป้อน DSP ชีพจรทีละค่า
 void readPpg(uint32_t now) {
   Max30102::Sample buf[32];
   const int n = s_max.read(buf, 32);
@@ -78,6 +80,7 @@ void readPpg(uint32_t now) {
   }
 }
 
+// อ่าน ADC ของ NTC, GSR, แบต (เฉลี่ยหลายครั้งลด noise) แล้วแปลงเป็นหน่วยจริง
 void readAnalog() {
   s_ntcMv = analog::readMv(PIN_NTC, ADC_OVERSAMPLE);
   s_gsrMv = analog::readMv(PIN_GSR, ADC_OVERSAMPLE);
@@ -95,6 +98,7 @@ void readAnalog() {
   s_vbat.push(vbat);
 }
 
+// รวมค่าทุกเซนเซอร์เป็น 1 เฟรม (5 ครั้ง/วินาที) -> ส่งเข้า frameQueue ให้ engineTask + เก็บเป็นค่าสดล่าสุด
 void publishFrame(uint32_t now) {
   Vitals v;
   v.ms = now;
@@ -147,6 +151,7 @@ void publishFrame(uint32_t now) {
   if (v.ppgContact || v.gsrContact) app::touchActivity();   // มีคนใส่อยู่ = ไม่ standby
 }
 
+// ตรวจสุขภาพเซนเซอร์: ชิปเงียบนาน = กู้บัส I2C, ตั้งธงเตือน (สายหลุด, แผ่น GSR ลัด, แบตอ่อน)
 void checkHealth(uint32_t now) {
   const Settings& st = storage::settings();
   // ชิปเคยตอบแต่เงียบไปนาน -> บัสค้าง/สายหลวม -> กู้บัส (เว้นระยะ 10 s กันวนรัว)
@@ -200,6 +205,7 @@ bool begin() {
   return a && b;
 }
 
+// 1 รอบของ sensorTask (ทุก 10 ms จาก hardware timer): อ่าน MPU ทุกรอบ, PPG/ADC ตามรอบ, ส่งเฟรมทุก 200 ms
 void tick() {
   s_tick++;
   const uint32_t now = millis();
@@ -234,6 +240,7 @@ void tick() {
 
 void requestGap() { s_gapReq = true; }
 
+// ขอให้ sensorTask หยุดเองหลังจบรอบ (ก่อนหลับ) แล้วรอได้ไม่เกิน waitMs
 bool stopForSleep(uint32_t waitMs) {
   // ห้ามใช้ vTaskSuspend(sensorTask) ตรง ๆ: ถ้าบังเอิญหยุดตอนมันถือ mutex ของ Wire อยู่
   // task อื่นที่เรียก I2C ต่อจะค้างตลอดไป (deadlock) -> ให้มันหยุดเองหลังจบ tick
@@ -246,11 +253,13 @@ bool stopRequested() { return s_stopReq; }
 void ackStop() { s_stopped = true; }
 void applySettings() { s_settingsDirty = true; }
 
+// สั่งเซนเซอร์เข้าโหมดประหยัดไฟก่อนหลับ
 void shutdownForSleep() {
   s_max.shutdown(true);
   s_mpu.sleep(true);
 }
 
+// ตอนตื่นจาก standby: เปิด MAX30102 แป๊บเดียวเพื่อดูว่ามีคนใส่นาฬิกาไหม (ไม่มี = หลับต่อ)
 bool quickContactCheck(uint32_t ms, uint32_t threshold) {
   // เรียกตอนตื่นจาก standby (ยังไม่มี task, ยังไม่เปิด WiFi) -> ต้องเร็วและกินไฟน้อย
   i2cbus::begin();

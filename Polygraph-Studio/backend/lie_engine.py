@@ -35,10 +35,12 @@ K_MAX_BASE, K_MAX_WIN, K_MAX_PRE, K_HIST, K_MAX_RES, K_MAX_CTL = 450, 100, 25, 6
 
 
 def clampf(x: float, lo: float, hi: float) -> float:
+    """บีบค่าให้อยู่ในช่วง [lo, hi] (เหมือน clampf ในเฟิร์มแวร์)"""
     return lo if x < lo else (hi if x > hi else x)
 
 
 def sigmoid(x: float) -> float:
+    """1/(1+e^-x) แปลงคะแนนเป็นความน่าจะเป็น 0-1 (ตัดที่ ±30 กัน exp ล้น)"""
     if x > 30.0:
         return 1.0
     if x < -30.0:
@@ -47,6 +49,7 @@ def sigmoid(x: float) -> float:
 
 
 def isnan(x) -> bool:
+    """ค่าไม่มี/ไม่ใช่ตัวเลข (None หรือ NaN)"""
     return x is None or (isinstance(x, float) and math.isnan(x))
 
 
@@ -55,20 +58,24 @@ class Stat:
     __slots__ = ("n", "mean", "m2")
 
     def __init__(self):
+        """สถิติแบบ online (Welford): เฉลี่ยและความแปรปรวนโดยไม่ต้องเก็บทุกค่า"""
         self.n, self.mean, self.m2 = 0, 0.0, 0.0
 
     def add(self, x: float):
+        """เพิ่ม 1 ค่า แล้วอัปเดตค่าเฉลี่ย/ผลรวมกำลังสองของส่วนต่าง"""
         self.n += 1
         d = x - self.mean
         self.mean += d / self.n
         self.m2 += d * (x - self.mean)
 
     def sd(self) -> float:
+        """ส่วนเบี่ยงเบนมาตรฐาน (หาร n-1)"""
         return math.sqrt(self.m2 / (self.n - 1)) if self.n > 1 else 0.0
 
 
 @dataclass
 class Frame:
+    """ค่าสัญญาณ 1 เฟรม (5 ครั้ง/วินาที) ที่ป้อนเข้า LieEngine: GSR, ชีพจร, แรงชีพจร, การสั่น, อุณหภูมิ + สถานะการสัมผัส"""
     gsr: float = 0.0
     hr: float = 0.0
     amp: float = 0.0
@@ -81,6 +88,7 @@ class Frame:
 
 @dataclass
 class Config:
+    """ค่าตั้งของ LieEngine (ตรงกับ lie::Config ในเฟิร์มแวร์): ความยาว baseline/ช่วงวัด, น้ำหนัก, เกณฑ์ตัดสิน"""
     frameHz: float = 5.0
     baselineSec: float = 30.0
     preSec: float = 3.0
@@ -100,6 +108,7 @@ class Config:
 
 @dataclass
 class Baseline:
+    """ค่าปกติของผู้ตอบ (ค่าเฉลี่ย + ส่วนเบี่ยงเบนของแต่ละสัญญาณ) ที่วัดตอนนั่งพัก"""
     valid: bool = False
     mean: List[float] = field(default_factory=lambda: [0.0] * F_COUNT)
     sd: List[float] = field(default_factory=lambda: [0.0] * F_COUNT)
@@ -113,6 +122,7 @@ class Baseline:
 
 @dataclass
 class Calibration:
+    """การปรับเกณฑ์จากข้อควบคุม (ข้อที่รู้ว่าตอบจริง/สั่งให้โกหก) ของผู้ตอบคนนี้"""
     nTruth: int = 0
     nLie: int = 0
     active: bool = False
@@ -129,6 +139,7 @@ class Calibration:
 
 @dataclass
 class Result:
+    """ผล 1 ข้อ (ตรงกับ lie::Result): คำตัดสิน, โอกาสโกหก, feature d/z ของ 5 สัญญาณ, คุณภาพ, เหตุผล"""
     seq: int = 0
     qid: int = 0
     kind: int = KIND_TEST
@@ -152,6 +163,7 @@ class Result:
     def to_json(self) -> dict:
         """รูปแบบเดียวกับ /api/lie ของเฟิร์มแวร์"""
         def num(x, d):
+            """ปัดทศนิยมสำหรับส่งเป็น JSON (NaN/อนันต์ -> null)"""
             return None if isnan(x) or math.isinf(x) else round(x, d)
         return {
             "seq": self.seq, "qid": self.qid, "kind": KIND_NAMES[self.kind],
@@ -167,9 +179,11 @@ class Result:
 
 
 class _Features:
+    """ตัวแปรชั่วคราวระหว่างคำนวณ feature ของ 1 ข้อ"""
     __slots__ = ("f", "ok", "pre", "gsrFrac", "ppgFrac", "motionFrac", "peakLatency", "preOk")
 
     def __init__(self):
+        """ค่าเริ่มต้น: ทุกสัญญาณยังไม่ผ่าน (ok = False)"""
         self.f = [0.0] * F_COUNT
         self.ok = [False] * F_COUNT
         self.pre = [float("nan")] * F_COUNT
@@ -179,7 +193,9 @@ class _Features:
 
 
 class Engine:
+    """LieEngine ฉบับ Python — ทำงานเหมือนเฟิร์มแวร์ทุกขั้น (ใช้ในนาฬิกาจำลอง และทดสอบเทียบผลกับ C++)"""
     def __init__(self, cfg: Optional[Config] = None):
+        """เริ่มที่สถานะ IDLE (ยังไม่มี baseline)"""
         self.cfg = Config()
         self.state = STATE_IDLE
         self.frames = 0
@@ -261,6 +277,7 @@ class Engine:
         return True
 
     def start_question(self, qid: int, kind: int) -> bool:
+        """เริ่มวัด 1 ข้อ (ต้องอยู่สถานะ READY = มี baseline แล้ว) — kind บอกว่าเป็นข้อทดสอบหรือข้อควบคุม"""
         if self.state != STATE_READY:
             self.err = {STATE_QUESTION: "QUESTION_ACTIVE", STATE_BASELINE: "BASELINE_RUNNING"}.get(self.state, "NO_BASELINE")
             return False
@@ -279,6 +296,7 @@ class Engine:
         return True
 
     def mark_answer(self, yes: bool) -> bool:
+        """บันทึกว่าผู้ตอบตอบตอนไหน และตอบ ใช่/ไม่ใช่"""
         if self.state != STATE_QUESTION:
             self.err = "NO_QUESTION"
             return False
@@ -288,6 +306,7 @@ class Engine:
         return True
 
     def abort(self):
+        """ยกเลิก baseline หรือข้อที่กำลังวัด"""
         if self.state == STATE_BASELINE:
             self.state = STATE_IDLE
         elif self.state == STATE_QUESTION:
@@ -296,6 +315,7 @@ class Engine:
         self.revision += 1
 
     def reset_session(self):
+        """ล้างทุกอย่างของผู้ตอบคนเดิม (baseline, ข้อควบคุม) เพื่อเริ่มกับคนใหม่"""
         self.state = STATE_IDLE
         self.base.valid = False
         self.ctl = []
@@ -327,6 +347,7 @@ class Engine:
         self._update_settled()
 
     def time(self) -> float:
+        """เวลาภายใน engine (วินาที) นับจากจำนวนเฟรม"""
         return self.frames / self.cfg.frameHz
 
     # ------------------------------------------------------------------ features
@@ -397,6 +418,7 @@ class Engine:
 
     @staticmethod
     def _score_of(z, ok_mask: int, w) -> float:
+        """คะแนนรวมถ่วงน้ำหนักจาก z ของสัญญาณที่ใช้ได้ (หารผลรวมน้ำหนักของสัญญาณที่ใช้ได้)"""
         s = ws = 0.0
         for i in range(F_COUNT):
             if ok_mask & (1 << i):
@@ -532,6 +554,7 @@ class Engine:
         self.revision += 1
 
     def _recalibrate(self):
+        """คำนวณเกณฑ์ใหม่จากข้อควบคุม (ต้องมีทั้งข้อจริงและข้อโกหก) — ปรับให้เข้ากับร่างกายผู้ตอบแต่ละคน"""
         c, cal = self.cfg, self.cal
         nT = sum(1 for x in self.ctl if not x[0])
         nL = sum(1 for x in self.ctl if x[0])
@@ -608,6 +631,7 @@ class Engine:
             self.refGsr += a60 * (f.gsr - self.refGsr)
 
     def _update_settled(self):
+        """ตรวจว่าร่างกายกลับสู่ปกติหลังข้อก่อนหรือยัง (พร้อมถามข้อถัดไป)"""
         c = self.cfg
         if self.state != STATE_READY:
             self.settled = False

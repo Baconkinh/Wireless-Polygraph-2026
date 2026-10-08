@@ -157,24 +157,26 @@ flowchart TD
 
 ---
 
-## 7. การเก็บข้อมูลเทรน AI — `Polygraph-Studio/ml/recorder.py`, `backend/collector.py`, `ml/collect.py`
+## 7. การเก็บข้อมูล / ใช้งานจริง — `Polygraph-Studio/ml/recorder.py`, `backend/collector.py`, `ml/collect.py`
 
 ```mermaid
 flowchart TD
-  S(["เริ่มรอบ: ชื่อผู้ตอบ, ผู้ถาม, โหมด"]) --> B["วัดค่าปกติ (baseline)"]
+  S(["เริ่มรอบ: ชื่อผู้ตอบ, ผู้ถาม, โหมด fix / manual / live"]) --> B["วัดค่าปกติ (baseline)"]
   B --> N["แสดง: ข้อถัดไป = ข้อที่ N (qid 600+N)<br/>ไฟล์ที่จะบันทึก, ใครถาม → ใครตอบ"]
   N --> M{"โหมด"}
-  M -- "fix" --> F1["ผู้ถามบอกผู้ตอบก่อน:<br/>ข้อนี้ให้ตอบจริง / ให้โกหก"]
-  F1 --> F2["กดปุ่ม 'ตอบจริง' หรือ 'โกหก'<br/>→ รู้เฉลยตั้งแต่เริ่ม"]
-  M -- "manual" --> M1["กด 'เริ่มถาม'<br/>ผู้ตอบเลือกเองว่าจะจริงหรือโกหก"]
-  F2 --> R["ข้อแรก? → สร้างไฟล์ CSV ตอนนี้<br/>(ก่อนหน้านี้เก็บในหน่วยความจำ ไม่มีไฟล์เปล่า)"]
-  M1 --> R
+  M -- "fix" --> F1["ผู้ถามบอกผู้ตอบก่อน:<br/>ข้อนี้ให้ตอบจริง / ให้โกหก<br/>กดปุ่มให้ตรง → รู้เฉลยตั้งแต่เริ่ม"]
+  M -- "manual / live" --> M1["กด 'ถาม' (พิมพ์คำถามได้)<br/>ผู้ตอบตอบตามใจ"]
+  F1 --> SEQ["จำเลข seq ของผลล่าสุดในนาฬิกา<br/>(กันจับคู่ผลเก่าที่ qid ซ้ำ)"]
+  M1 --> SEQ
+  SEQ --> R["ข้อแรก? → สร้างไฟล์ตอนนี้<br/>(ก่อนหน้านี้เก็บในหน่วยความจำ ไม่มีไฟล์เปล่า)"]
   R --> W["บันทึก 12 วินาที<br/>เส้นนับถอยหลังวิ่ง"]
-  W --> RES["นาฬิกาส่งผล (คำตัดสิน + feature)"]
+  W --> RES["นาฬิกาส่งผล (seq ใหม่กว่า) + feature"]
   RES --> L{"รู้เฉลยแล้ว?"}
   L -- "fix: รู้แล้ว" --> SAVE
-  L -- "manual: ยัง" --> ASK["ถามผู้ตอบ: ข้อนี้พูดจริงหรือโกหก?"]
-  ASK --> SAVE["เขียน signals_*.csv (ทุกแถวมี question_no + label)<br/>results_*.csv + training_samples.csv + SQLite"]
+  L -- "manual" --> ASK["ผู้ตอบบอก: พูดจริง / โกหก / ไม่รู้"]
+  L -- "live" --> FB["ผู้ใช้กด: นาฬิกาตอบ ถูก / ผิด / ไม่ทราบ<br/>→ แปลงเป็นเฉลย"]
+  ASK --> SAVE["เขียน data/result_รอบ.csv (1 แถว/ข้อ: เฉลย + คำตัดสิน + 12 feature)<br/>+ data/signals/signals_รอบ.csv + SQLite"]
+  FB --> SAVE
   SAVE --> N
 ```
 
@@ -184,12 +186,14 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  A["เก็บข้อมูล<br/>(ข้อ 7)"] --> B["training_samples.csv<br/>1 แถว/ข้อ: 12 feature + label"]
-  B --> C["train.py: standardize<br/>Logistic Regression + L2<br/>(Newton/IRLS)"]
+  A["เก็บข้อมูล / ใช้งานจริง<br/>(ข้อ 7)"] --> B[("data/result_*.csv<br/>รูปแบบเดียว 1 แถว/ข้อ")]
+  W["นาฬิกาบันทึกเอง /train.csv<br/>(โหมด train บนมือถือ)"] -- "ดึงข้อมูล / นำเข้าไฟล์<br/>(ตัดข้อซ้ำ)" --> B
+  B --> X["เลือกไฟล์ (ติ๊ก 'ใช้เทรน')<br/>แถว used_for_training = 1"]
+  X --> C["train.py: standardize<br/>Logistic Regression + L2<br/>(Newton/IRLS)"]
   C --> D["ประเมินแบบไม่โกง:<br/>leave-one-subject-out<br/>หรือ stratified k-fold"]
-  D --> E["model.json<br/>features, mean, scale, w, b"]
-  E -- "อัปโหลด (เว็บ / --upload)" --> F["นาฬิกาเก็บใน NVS<br/>ตรวจ CRC32"]
-  F --> G["LieEngine เรียก scorer()<br/>ทุกข้อ → 'ตัดสินด้วยโมเดล AI'"]
+  D --> E[("data/model.json<br/>+ data/models/")]
+  E -- "model_sync.py ส่งอัตโนมัติ<br/>(หรือ train_ai_upload.bat)" --> F["นาฬิกาเก็บใน NVS<br/>ตรวจ CRC32"]
+  F --> G["LieEngine เรียก scorer()<br/>ml_model predict() ทุกข้อ<br/>→ 'ตัดสินด้วยโมเดล AI'"]
 ```
 
 ---
@@ -199,30 +203,38 @@ flowchart LR
 ```mermaid
 flowchart LR
   subgraph Browser["frontend (เบราว์เซอร์)"]
-    UI["index.html + main.js<br/>หน้าหลัก / เก็บข้อมูล / ผลลัพธ์ / ระบบ / คู่มือ"]
+    UI["index.html + main.js<br/>หน้าหลัก / ใช้งานจริง / เก็บข้อมูล /<br/>ข้อมูล & เทรน AI / ผลลัพธ์ / ระบบ / คู่มือ"]
   end
   subgraph Backend["backend (Python FastAPI)"]
     API["main.py REST /api/..."]
+    DAPI["data_api.py ไฟล์ + เทรน"]
     HUB["hub.py WebSocket /ws"]
     INT["sessions.py เซสชันทดสอบ"]
-    COL["collector.py เก็บข้อมูลเทรน"]
+    COL["collector.py เก็บข้อมูล / ใช้งานจริง"]
+    SYNC["model_sync.py ส่งโมเดลอัตโนมัติ"]
     LINK["watch_link.py UDP + HTTP"]
     DB[("store.py SQLite<br/>data/studio.db")]
   end
   W["นาฬิกา ESP32-C3"]
   UI -- "fetch /api (คำสั่ง)" --> API
-  HUB -- "ค่าสด/ผล (push)" --> UI
+  UI -- "/api/data, /api/ai" --> DAPI
+  HUB -- "ค่าสด/ผล/สถานะ (push)" --> UI
   API --> INT
   API --> COL
   INT --> LINK
   COL --> LINK
+  SYNC --> LINK
   LINK -- "hello / HTTP" --> W
   W -- "UDP v/w/e" --> LINK
   LINK --> INT
+  INT --> COL
   INT --> HUB
   INT --> DB
   COL --> DB
-  COL --> CSV["data/*.csv"]
+  COL --> CSV[("data/result_*.csv<br/>data/signals/")]
+  DAPI --> CSV
+  DAPI --> M[("data/model.json")]
+  M --> SYNC
 ```
 
 ---

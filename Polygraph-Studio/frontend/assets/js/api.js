@@ -1,6 +1,7 @@
 // api.js — เรียก REST API ของ Studio (ซึ่งส่งต่อไปนาฬิกาอีกที) + แสดงข้อความผิดพลาดเป็นภาษาไทย
 import { toast } from './ui.js';
 
+// เรียก REST API ของ Studio แล้วคืน JSON — ถ้าผิดพลาดแสดงข้อความไทยมุมจอ (quiet = ไม่ต้องแสดง)
 export async function api(path, { method = 'GET', body, quiet = false } = {}) {
   let res;
   try {

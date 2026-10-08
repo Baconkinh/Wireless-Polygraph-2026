@@ -5,6 +5,7 @@ import { get, post, del, cmd } from '../api.js';
 
 let root, templates = null, shellFor = null;
 
+// สร้างส่วน "ทดสอบแบบเซสชัน" (ฝังอยู่ในหน้าหลัก)
 export function mount(el) {
   root = el;
   on('snapshot', render);
@@ -13,7 +14,9 @@ export function mount(el) {
   on('vitals', paintLive);
   on('lie', paintReady);
 }
+// กลับมาที่หน้านี้: วาดใหม่
 export function show() { render(); }
+// ออกจากหน้านี้
 export function hide() {}
 
 // ---------------------------------------------------------------- เลือกว่าจะโชว์ฟอร์มหรือแผงควบคุม
@@ -29,6 +32,7 @@ function render() {
   paintBanners();
 }
 
+// แถบเตือนด้านบน (ยังไม่เชื่อมนาฬิกา, เซนเซอร์หลุด, ยังไม่วัด baseline ...)
 function bannerHtml() {
   const out = [];
   const v = S.live, st = S.status || {};
@@ -37,6 +41,7 @@ function bannerHtml() {
   if (v && (v.fl & 256)) out.push(['danger', '<svg class=i><use href=#i-alert></use></svg> นาฬิกาเสียบ USB อยู่ — ห้ามวัด GSR กับคน ให้ใช้แบตเตอรี่เท่านั้น']);
   return out.map(([c, t]) => `<div class="banner ${c}">${t}</div>`).join('');
 }
+// วาดแถบเตือนใหม่
 function paintBanners() { const b = $('#se-ban', root); if (b) b.innerHTML = bannerHtml(); }
 
 // ---------------------------------------------------------------- ฟอร์มเริ่มเซสชัน
@@ -151,6 +156,7 @@ function renderShell() {
   $('#se-text', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') addQuestion(); });
 }
 
+// เพิ่มคำถามที่พิมพ์เข้าเซสชัน
 async function addQuestion() {
   const text = $('#se-text', root).value.trim();
   if (!text) return toast('พิมพ์คำถามก่อน', 'warn');
@@ -165,6 +171,7 @@ function paintState() {
   return es;
 }
 
+// รายการตรวจความพร้อมก่อนถาม (เชื่อมต่อ, สัญญาณ, baseline, ร่างกายกลับสู่ปกติ)
 function paintReady() {
   const el = $('#se-ready', root); if (!el) return;
   const lie = S.lie || {};
@@ -179,12 +186,14 @@ function paintReady() {
   if (bl.valid) items.push(check(settled, 'สัญญาณนิ่ง พร้อมถามข้อต่อไป', 'รอสัญญาณนิ่ง (10–20 วินาที)', true));
   el.innerHTML = items.join('');
 }
+// HTML ของ 1 ข้อในรายการตรวจความพร้อม (ผ่าน / เตือน / ไม่ผ่าน)
 function check(ok, okText, badText, warnOnly) {
   const cls = ok ? 'ok' : (warnOnly ? 'warn' : 'bad');
   const ic = ok ? '✓' : (warnOnly ? '!' : '×');
   return `<div class="check"><div class="st ${cls}">${ic}</div><div>${esc(ok ? okText : badText)}</div></div>`;
 }
 
+// วาดรายการคำถาม + ปุ่มถาม/ลบ + ผลของแต่ละข้อ
 function paintQuestions() {
   const s = S.session; if (!s) return;
   const box = $('#se-qlist', root); if (!box) return;
@@ -212,12 +221,15 @@ function paintQuestions() {
   $('#se-qn', root).textContent = `${(s.questions || []).length} ข้อ`;
 }
 
+// เริ่มถามข้อที่เลือก
 async function askQ(id) {
   const r = await post(`/api/questions/${id}/ask`);
   if (r && r.ok) toast('เริ่มถามแล้ว — อ่านคำถามออกเสียงทันที แล้วกดคำตอบ', 'ok', 5000);
 }
+// ลบคำถาม (เฉพาะข้อที่ยังไม่ได้ถาม)
 async function delQ(id) { await del(`/api/questions/${id}`); }
 
+// สรุปเซสชัน: จำนวนจริง/โกหก/ไม่แน่ชัด และความแม่นยำของข้อควบคุม
 function paintSummary() {
   const s = S.session; const el = $('#se-sum', root); if (!s || !el) return;
   const sum = s.summary || { counts: {}, controls: {} };
@@ -233,6 +245,7 @@ function paintSummary() {
     ${(s.cit || []).map((g) => `<div class="callout ok" style="margin-top:10px"><svg class=i><use href=#i-target></use></svg> เกมทายเลขลับ: เดาว่า <b>"${esc(g.best_question)}"</b> (มั่นใจ ${esc(g.confidence)})</div>`).join('')}`;
 }
 
+// อัปเดตค่าสดในการ์ดเซสชัน
 function paintLive() {
   const v = S.live; if (!v || !$('#se-live', root)) return;
   set('hr', v.con && v.hr ? fmt(v.hr, 0) : '—');
@@ -249,6 +262,7 @@ function paintLive() {
   $('#se-baseline', root).disabled = busy;
   $('#se-prog', root).textContent = busy ? `${['','baseline','','คำถาม #' + v.eq][es] || ''} ${Math.round((v.ep || 0) * 100)}% (${fmt(v.eel, 0)} วินาที)` : '';
 }
+// ใส่ตัวเลขลงช่องค่าสด 1 ช่อง
 function set(id, val) { const el = $(`#sl-${id} .num`, root); if (el) el.textContent = val; }
 
 // อัปเดต "ผลล่าสุด" เมื่อมีผลใหม่

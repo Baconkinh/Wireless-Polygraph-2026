@@ -20,6 +20,7 @@ char s_mac[18] = "";
 bool s_running = false;
 uint8_t s_level = 1;
 
+// ระดับ 0/1/2 -> กำลังส่ง 5/8.5/13 dBm (3 = 2 dBm ต่ำสุด ใช้ภายใน)
 wifi_power_t toPower(uint8_t level) {
   switch (level) {
     case 0: return WIFI_POWER_5dBm;
@@ -30,6 +31,7 @@ wifi_power_t toPower(uint8_t level) {
 }
 bool s_eventsHooked = false;
 
+// มีเครื่องเชื่อม/หลุดจาก WiFi ของนาฬิกา -> จด log (ทำสั้น ๆ เพราะรันใน task ของ WiFi)
 void onWifiEvent(arduino_event_id_t ev, arduino_event_info_t info) {
   // callback นี้รันใน task ของ WiFi event -> ทำงานสั้น ๆ แล้วส่งต่อผ่านคิว
   if (ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
@@ -43,6 +45,7 @@ void onWifiEvent(arduino_event_id_t ev, arduino_event_info_t info) {
 }
 }  // namespace
 
+// เปิด WiFi แบบ SoftAP ("Polygraph-Watch", 192.168.4.1) ตามระดับกำลังส่งที่ตั้งไว้
 bool beginAp(uint8_t level) {
   s_level = level;
   if (!s_eventsHooked) {
@@ -66,6 +69,7 @@ bool beginAp(uint8_t level) {
   return ok;
 }
 
+// ปิด WiFi (ก่อนหลับ/ประหยัดไฟ)
 void stopAp() {
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_OFF);
@@ -77,6 +81,7 @@ bool apRunning() { return s_running; }
 
 uint8_t stations() { return s_running ? WiFi.softAPgetStationNum() : 0; }
 
+// ความแรงสัญญาณของเครื่องที่ต่ออยู่ (ดีที่สุด) — แสดงในหน้าระบบ
 int8_t bestRssi() {
   if (!s_running) return 0;
   wifi_sta_list_t list;
@@ -87,6 +92,7 @@ int8_t bestRssi() {
   return best;
 }
 
+// เปลี่ยนกำลังส่ง WiFi ทันที
 void setPowerLevel(uint8_t level) {
   s_level = level;
   if (s_running) WiFi.setTxPower(toPower(level));
@@ -94,6 +100,7 @@ void setPowerLevel(uint8_t level) {
 
 uint8_t powerLevel() { return s_level; }
 
+// ชื่อระดับกำลังส่งเป็นข้อความ
 const char* powerName(uint8_t level) {
   switch (level) {
     case 0: return "low (5 dBm)";

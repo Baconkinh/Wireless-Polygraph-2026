@@ -11,7 +11,8 @@ export const S = {
   lie: null,           // สถานะ LieEngine (baseline, calibration, ผล)
   device: { hi: {}, info: {} },
   session: null,       // เซสชันที่เปิดอยู่
-  collect: null,       // สถานะหน้าเก็บข้อมูลเทรน AI (backend/collector.py)
+  collect: null,       // สถานะรอบเก็บข้อมูล/ใช้งานจริง (backend/collector.py)
+  ai: null,            // โมเดล AI ในคอม vs ในนาฬิกา + ส่งอัตโนมัติ (backend/model_sync.py)
   credits: null,       // ชื่อโครงงาน รายวิชา ผู้จัดทำ
   meta: null,
   lastResult: null,    // {result, question, explain}
@@ -25,9 +26,12 @@ export const S = {
 };
 
 const subs = {};
+// สมัครฟังเหตุการณ์ (เช่น on('vitals', fn)) — ทุกหน้าใช้ฟังข้อมูลใหม่จาก WebSocket
 export function on(evt, fn) { (subs[evt] = subs[evt] || []).push(fn); }
+// แจ้งทุกฟังก์ชันที่ฟังเหตุการณ์นี้ (error ในหน้าหนึ่งไม่ทำให้หน้าอื่นพัง)
 export function emit(evt, data) { (subs[evt] || []).forEach((fn) => { try { fn(data); } catch (e) { console.error(evt, e); } }); }
 
+// เก็บค่าสดล่าสุด + ต่อท้ายข้อมูลย้อนหลัง 2 นาทีสำหรับกราฟ (เก่ากว่านั้นทิ้ง)
 export function pushVitals(v) {
   const now = Date.now();
   const h = S.hist;
@@ -46,6 +50,7 @@ export function pushVitals(v) {
   S.lastVitalsAt = now;
 }
 
+// เก็บคลื่นชีพจรลงบัฟเฟอร์วงกลม 6 วินาที + จุดที่เป็นจังหวะหัวใจ
 export function pushWave(w) {
   const d = w.d || [];
   for (let i = 0; i < d.length; i++) {

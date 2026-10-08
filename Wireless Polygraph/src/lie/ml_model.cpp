@@ -18,6 +18,7 @@ const char* const kFeatureNames[FEAT_COUNT] = {
     "d_gsr", "d_hr", "d_amp", "d_trm", "d_tmp",
     "gsr_ok", "ppg_ok"};
 
+// ชื่อ feature (เช่น "z_hr") -> ลำดับ 0-11 (ไม่รู้จัก = -1)
 int featureFromName(const char* name) {
   if (!name) return -1;
   for (int i = 0; i < FEAT_COUNT; i++)
@@ -25,6 +26,7 @@ int featureFromName(const char* name) {
   return -1;
 }
 
+// ดึง feature 12 ตัวจากผลของ LieEngine (สัญญาณที่ใช้ไม่ได้ = 0) — ลำดับเดียวกับ polyml.FEATURES ฝั่งคอม
 void extract(const lie::Result& r, float out[FEAT_COUNT]) {
   for (int i = 0; i < lie::F_COUNT; i++) {
     const bool ok = (r.okMask >> i) & 1u;
@@ -36,6 +38,7 @@ void extract(const lie::Result& r, float out[FEAT_COUNT]) {
   out[PPG_OK] = (r.okMask & (1u << lie::F_HR)) ? 1.0f : 0.0f;
 }
 
+// CRC32 ของโมเดล — ใช้ตรวจว่าโมเดลใน NVS ไม่เสีย
 static uint32_t crc32(const uint8_t* p, size_t n) {
   uint32_t c = 0xFFFFFFFFu;
   while (n--) {
@@ -47,6 +50,7 @@ static uint32_t crc32(const uint8_t* p, size_t n) {
 
 void clear(Model& m) { memset(&m, 0, sizeof(m)); }
 
+// ใส่ magic + version + CRC32 ก่อนบันทึกโมเดลลง NVS
 void seal(Model& m) {
   m.magic = kMagic;
   m.version = 1;
@@ -54,6 +58,7 @@ void seal(Model& m) {
   m.crc = crc32(reinterpret_cast<const uint8_t*>(&m), offsetof(Model, crc));
 }
 
+// ตรวจโมเดล: magic, จำนวน feature, CRC32, scale > 0, ไม่มี NaN — ไม่ผ่าน = ไม่ใช้
 bool valid(const Model& m) {
   if (m.magic != kMagic || m.n == 0 || m.n > kMaxFeatures) return false;
   if (m.crc != crc32(reinterpret_cast<const uint8_t*>(&m), offsetof(Model, crc))) return false;
@@ -64,6 +69,14 @@ bool valid(const Model& m) {
   return !isnan(m.b);
 }
 
+// ทำนายโอกาสโกหกของ 1 ข้อ (AI ทำงานยังไง) — ทุกบรรทัดตรงกับ Model.prob_row() ใน polyml.py ฝั่งคอม
+//   1) extract()  : ดึง feature 12 ตัวของข้อนี้ (z และ d ของ 5 สัญญาณ + มี GSR/ชีพจรไหม)
+//   2) z = b      : เริ่มจาก bias (ค่าคงที่ที่ได้ตอนเทรน)
+//   3) วนทุก feature ที่โมเดลใช้: (x - mean) / scale = แปลงเป็นสเกลมาตรฐานแบบเดียวกับตอนเทรน
+//      แล้วคูณน้ำหนัก w (บวก = ยิ่งมากยิ่งน่าจะโกหก, ลบ = ตรงข้าม) บวกสะสมใน z
+//   4) sigmoid(z) = 1 / (1 + e^-z) แปลงคะแนนเป็นความน่าจะเป็น 0-1 = p(โกหก)
+//   ใช้ double ตอนบวกสะสม (ESP32-C3 ไม่มี FPU double แต่ 12 ครั้งต่อข้อเร็วพอ) และตัดที่ ±30 กัน exp ล้น
+//   LieEngine นำ p ไปเทียบเกณฑ์ lieP/truthP ต่อ -> โกหก / จริง / ไม่แน่ชัด
 float predict(const Model& m, const lie::Result& r) {
   float x[FEAT_COUNT];
   extract(r, x);
@@ -74,6 +87,7 @@ float predict(const Model& m, const lie::Result& r) {
   return (float)(1.0 / (1.0 + exp(-z)));
 }
 
+// แปลงข้อความ "1.2,3.4,..." (จากฟอร์มอัปโหลดโมเดล) เป็น array float
 int parseFloats(const char* s, float* out, int maxN) {
   if (!s) return -1;
   int n = 0;
@@ -93,6 +107,7 @@ int parseFloats(const char* s, float* out, int maxN) {
   return n;
 }
 
+// แปลงรายชื่อ feature "z_gsr,z_hr,..." เป็นลำดับ index
 int parseFeatureList(const char* s, uint8_t* out, int maxN) {
   if (!s) return -1;
   int n = 0;

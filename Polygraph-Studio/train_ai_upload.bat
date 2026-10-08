@@ -12,6 +12,11 @@ if not defined PY (
   pause
   exit /b 1
 )
-rem needs WiFi "Polygraph-Watch": download data from the watch, train, upload the model
-%PY% ml\train.py --download --upload %*
+rem ==========================================================================
+rem  train_ai_upload.bat = SEND the existing data\model.json to the watch (NO training)
+rem   use when: you trained while the PC was not on the watch WiFi, and you do not want to open Studio
+rem   (run_studio.bat already sends the newest model.json automatically - this file is just a manual option)
+rem   connect this PC to WiFi "Polygraph-Watch" first
+rem ==========================================================================
+%PY% ml\train.py --upload-only %*
 pause

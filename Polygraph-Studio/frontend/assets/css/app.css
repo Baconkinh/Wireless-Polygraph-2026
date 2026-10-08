@@ -289,3 +289,8 @@ pre.log { max-height: 320px; overflow: auto; background: var(--bg2); padding: 12
 .input.sm-input { width: auto; padding: 6px 10px; font-weight: 700; }
 @media (max-width: 1250px) { .home-cols { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .tiles6, .charts4 { grid-template-columns: 1fr 1fr; } .cnt4 { grid-template-columns: 1fr 1fr; } }
+
+/* ---------------- v2.3: หน้า "ข้อมูล & เทรน AI", "ใช้งานจริง", ประวัติทั้งหมด ---------------- */
+a.btn { text-decoration: none; }                        /* ลิงก์ดาวน์โหลดที่หน้าตาเป็นปุ่ม */
+td .acts { display: flex; gap: 4px; flex-wrap: nowrap; } /* ปุ่มท้ายแถวในตาราง ไม่ให้ตัดบรรทัด */
+table.t td.nowrap, table.t .nowrap { white-space: nowrap; }

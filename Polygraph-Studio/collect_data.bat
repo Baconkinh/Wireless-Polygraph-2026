@@ -12,7 +12,8 @@ if not defined PY (
   pause
   exit /b 1
 )
-rem collect training data from the watch into data\*.csv  (no extra libraries needed)
+rem collect training data from the watch into data\result_<date_time>.csv  (no extra libraries needed)
+rem next step after collecting: double-click train_ai.bat
 rem usage: collect_data.bat --subject Somchai     (add --sim for the virtual watch)
 %PY% ml\collect.py %*
 pause

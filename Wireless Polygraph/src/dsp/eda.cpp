@@ -13,6 +13,7 @@ constexpr float kScrMinRise = 0.05f;   // µS: ยอดเล็กกว่า
 constexpr float kScrDrop    = 0.01f;   // µS: ลดลงจากยอดเท่านี้ = ยอดจบแล้ว
 }
 
+// ตั้งตัวกรอง GSR: เรียบ 0.4 s (ตัด noise), tonic 15 s (ระดับพื้นฐานที่เปลี่ยนช้า)
 void EdaProcessor::begin(float fs) {
   fs_ = fs;
   smooth_.setup(fs, 0.4f);   // เรียบพอตัดสัญญาณรบกวน แต่ยังเห็นยอด SCR (กว้าง 1–5 s)
@@ -26,6 +27,7 @@ void EdaProcessor::begin(float fs) {
   rising_ = false;
 }
 
+// ป้อนค่า GSR 1 ค่า: แยก tonic (ระดับพื้น) กับ phasic (ยอดสั้น ๆ ตอนตื่นเต้น) และนับยอด SCR
 void EdaProcessor::push(float uS, bool contact) {
   n_++;
   if (!contact) {
@@ -86,6 +88,7 @@ void EdaProcessor::push(float uS, bool contact) {
   }
 }
 
+// จำนวนยอด SCR ในหนึ่งนาทีล่าสุด (บอกความตื่นตัว)
 uint16_t EdaProcessor::scrPerMin() const {
   const uint32_t win = (uint32_t)(60.0f * fs_);
   uint16_t c = 0;

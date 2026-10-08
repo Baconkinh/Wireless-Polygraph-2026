@@ -56,6 +56,7 @@ uint32_t crc32(const uint8_t* p, size_t n) {
   return ~c;
 }
 
+// CRC32 ของสถิติสะสม (ตรวจว่าข้อมูลใน EEPROM ไม่เสีย)
 uint32_t statsCrc(const Stats& s) {
   return crc32(reinterpret_cast<const uint8_t*>(&s), offsetof(Stats, crc));
 }
@@ -63,6 +64,7 @@ uint32_t statsCrc(const Stats& s) {
 void lockFs() { if (app::fsMutex) xSemaphoreTake(app::fsMutex, portMAX_DELAY); }
 void unlockFs() { if (app::fsMutex) xSemaphoreGive(app::fsMutex); }
 
+// อ่านค่าตั้งจาก NVS (ไม่มี = ค่าเริ่มต้น) — อัปเกรดค่าจากเวอร์ชันเก่าให้อัตโนมัติ
 void loadSettings() {
   Settings d;   // ค่าเริ่มต้น
   // v2.1 เปลี่ยนน้ำหนักเริ่มต้น (ลด GSR) -> ถ้าเป็นค่าตั้งจากเวอร์ชันเก่า ให้ลบน้ำหนักเดิมทิ้ง
@@ -142,6 +144,7 @@ bool begin() {
 // ---------------- Settings ----------------
 Settings& settings() { return s_settings; }
 
+// บันทึกเฉพาะค่าที่เปลี่ยน ลง NVS (ลดการเขียนแฟลช)
 bool saveSettings() {
   if (!s_prefsOk) return false;
   const Settings& n = s_settings;
@@ -171,6 +174,7 @@ bool saveSettings() {
   return true;
 }
 
+// ล้างค่าตั้งทั้งหมดกลับเป็นค่าเริ่มต้น
 void resetSettings() {
   if (s_prefsOk) {
     prefs.clear();
@@ -180,6 +184,7 @@ void resetSettings() {
   s_saved = s_settings;
 }
 
+// แปลงค่าตั้งที่เก็บใน NVS เป็น lie::Config ของ LieEngine
 void toEngineConfig(const Settings& s, lie::Config& c) {
   c.baselineSec = s.baselineSec;
   c.windowSec = s.windowSec;
@@ -191,10 +196,12 @@ void toEngineConfig(const Settings& s, lie::Config& c) {
   for (int i = 0; i < lie::F_COUNT; i++) c.weight[i] = s.w[i];
 }
 
+// จำนวนช่องที่ใช้ใน NVS (แสดงในหน้าระบบ)
 uint32_t nvsUsedEntries() {
   nvs_stats_t st;
   return nvs_get_stats(NULL, &st) == ESP_OK ? (uint32_t)st.used_entries : 0;
 }
+// จำนวนช่องว่างใน NVS
 uint32_t nvsFreeEntries() {
   nvs_stats_t st;
   return nvs_get_stats(NULL, &st) == ESP_OK ? (uint32_t)st.free_entries : 0;
@@ -203,12 +210,14 @@ uint32_t nvsFreeEntries() {
 // ---------------- Stats ----------------
 Stats& stats() { return s_stats; }
 
+// บันทึกสถิติสะสมลง EEPROM emulation (ต้อง commit ถึงจะลงแฟลชจริง)
 bool saveStats() {
   s_stats.crc = statsCrc(s_stats);
   EEPROM.put(0, s_stats);
   return EEPROM.commit();   // ไม่ commit = อยู่แค่ใน RAM, ไฟดับก็หาย
 }
 
+// ล้างสถิติสะสม (ยกเว้นจำนวนบูต)
 void resetStats() {
   uint32_t boots = s_stats.bootCount;
   memset(&s_stats, 0, sizeof(s_stats));
@@ -231,6 +240,7 @@ void setPlanned(uint32_t reason, const char* task, uint32_t value) {
   rtcRecord.check = rtcRecord.magic ^ rtcRecord.reason ^ rtcRecord.uptimeS ^ rtcRecord.value;
 }
 
+// อ่านแล้วล้าง "กล่องดำ" ใน RTC memory: สาเหตุรีเซ็ตที่ตั้งใจ (เช่น สาธิต watchdog)
 bool takePlanned(RtcRecord& out) {
   bool valid = rtcRecord.magic == RTC_MAGIC &&
                rtcRecord.check == (rtcRecord.magic ^ rtcRecord.reason ^ rtcRecord.uptimeS ^
@@ -248,6 +258,7 @@ bool fsOk() { return s_fsOk; }
 size_t fsUsed() { return s_fsOk ? LittleFS.usedBytes() : 0; }
 size_t fsTotal() { return s_fsOk ? LittleFS.totalBytes() : 0; }
 
+// ไฟล์ log ใหญ่เกินกำหนด -> เปลี่ยนชื่อเป็นไฟล์เก่า แล้วเริ่มไฟล์ใหม่ (กันแฟลชเต็ม)
 static void rotateIfBig(const char* path, const char* old, size_t maxBytes) {
   File f = LittleFS.open(path, "r");
   if (!f) return;
@@ -258,6 +269,7 @@ static void rotateIfBig(const char* path, const char* old, size_t maxBytes) {
   LittleFS.rename(path, old);
 }
 
+// ต่อท้าย 1 บรรทัดลง /events.log
 void appendEvent(const char* type, const char* text) {
   if (!s_fsOk) return;
   lockFs();
@@ -272,6 +284,7 @@ void appendEvent(const char* type, const char* text) {
   unlockFs();
 }
 
+// ต่อท้ายผล 1 ข้อลง /results.csv
 void appendResult(const char* csvLine) {
   if (!s_fsOk) return;
   lockFs();
@@ -289,6 +302,7 @@ void appendResult(const char* csvLine) {
   unlockFs();
 }
 
+// อ่านไฟล์จาก LittleFS (ไม่เกิน maxBytes)
 bool readFile(const char* path, String& out, size_t maxBytes) {
   if (!s_fsOk) return false;
   lockFs();
@@ -317,6 +331,7 @@ const char* const kTrainHeader =
     "time,subject,qid,label,label_name,quality,gsr_ok,ppg_ok,"
     "z_gsr,z_hr,z_amp,z_trm,z_tmp,d_gsr,d_hr,d_amp,d_trm,d_tmp,p_model,source";
 
+// ต่อท้ายข้อมูลเทรน 1 ข้อลง /train.csv (เต็ม = ไม่เขียน แจ้งให้ดาวน์โหลดแล้วล้าง)
 bool appendTrain(const char* csvLine, int label) {
   if (!s_fsOk) return false;
   bool ok = false;
@@ -343,11 +358,13 @@ bool appendTrain(const char* csvLine, int label) {
   return ok;
 }
 
+// จำนวนข้อมูลเทรนในนาฬิกา (ตอบจริง, โกหก)
 void trainCounts(uint32_t& truth, uint32_t& lie) {
   truth = s_trainTruth;
   lie = s_trainLie;
 }
 
+// ขนาดไฟล์ /train.csv
 size_t trainBytes() {
   if (!s_fsOk) return 0;
   lockFs();
@@ -358,6 +375,7 @@ size_t trainBytes() {
   return sz;
 }
 
+// ลบ /train.csv
 bool clearTrain() {
   if (!s_fsOk) return false;
   lockFs();
@@ -367,6 +385,7 @@ bool clearTrain() {
   return true;
 }
 
+// อ่านโมเดล AI จาก NVS (ขนาดไม่ตรง = ไม่มีโมเดล)
 bool loadModel(ml::Model& m) {
   ml::clear(m);
   if (mlPrefs.getBytesLength("model") != sizeof(ml::Model)) return false;
@@ -374,12 +393,14 @@ bool loadModel(ml::Model& m) {
   return ml::valid(m);
 }
 
+// บันทึกโมเดล AI ลง NVS (อยู่ถาวรแม้ปิดเครื่อง)
 bool saveModel(const ml::Model& m) {
   return mlPrefs.putBytes("model", &m, sizeof(m)) == sizeof(m);
 }
 
 void clearModel() { mlPrefs.remove("model"); }
 
+// ลบไฟล์ log ทั้งหมด
 bool clearLogs() {
   if (!s_fsOk) return false;
   lockFs();

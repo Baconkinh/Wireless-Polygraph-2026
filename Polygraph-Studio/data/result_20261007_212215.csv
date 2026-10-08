@@ -1,0 +1,4 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-07 21:22:15.000,20261007_212215,watch,-,-,1,1,watch,,truth,,,0.102,rules,100,,,1,1,1,0.0544,4.77,0.0268,0.002,0.033,0.786,0.633,0.67,0.116,-0.129,นำเข้าจาก polygraph_train.csv
+2026-10-07 21:22:35.000,20261007_212215,watch,-,-,2,2,watch,,lie,,,0.852,rules,100,,,1,1,1,0.2896,7.74,0.1711,0.0125,0.04,5.49,2.608,4.276,0.639,0.101,
+2026-10-07 21:22:54.000,20261007_212215,watch,-,-,3,3,watch,,truth,,,0.017,rules_calibrated,100,,,1,1,1,-0.0028,2.77,-0.0062,-0.0011,0.037,-0.358,-0.705,-0.155,-0.04,0.014,

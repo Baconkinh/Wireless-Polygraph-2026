@@ -39,6 +39,7 @@ using lie::Engine;
 // ไม่ใช้ "> " เฉย ๆ เพราะ filter "time" ของ PlatformIO ขึ้นต้นบรรทัดด้วย "เวลา > " อยู่แล้ว
 void prompt() { Serial.print("PW> "); }
 
+// ข้อความต้อนรับตอนเปิด Serial Monitor: ชื่อ WiFi/รหัส, โหมด, โมเดล AI, วิธีดูคำสั่ง
 void printWelcome() {
   Serial.printf("\n=== %s v%s  (%s) ===\n", FW_NAME, FW_VERSION, net::deviceId());
   Serial.printf("WiFi \"%s\" รหัส \"%s\" -> เปิด http://192.168.4.1\n", AP_SSID, AP_PASS);
@@ -49,6 +50,7 @@ void printWelcome() {
   s_welcomed = true;
 }
 
+// คำสั่ง help: รายการคำสั่งทั้งหมดแบ่งหมวด
 void printHelp() {
   Serial.println(F("\n================ คำสั่ง Serial ================"));
   Serial.println(F("[ทั่วไป]"));
@@ -90,6 +92,7 @@ void printHelp() {
   Serial.println(F("==============================================="));
 }
 
+// คำสั่ง live: ค่าสดทุกเซนเซอร์ 1 บรรทัด
 void printLive() {
   const Vitals v = app::getVitals();
   const EngineSnap e = app::getEngineSnap();
@@ -100,6 +103,7 @@ void printLive() {
                 e.progress * 100);
 }
 
+// คำสั่ง status: สรุปเครื่อง, สาเหตุรีเซ็ต, เซนเซอร์, WiFi, LieEngine, หน่วยความจำ
 void printStatus() {
   const wdt::BootInfo& bi = wdt::bootInfo();
   Serial.printf("\n%s v%s (%s)  id=%s\n", FW_NAME, FW_VERSION, FW_BUILD, net::deviceId());
@@ -123,6 +127,7 @@ void printStatus() {
   printLive();
 }
 
+// คำสั่ง boots: สถิติการรีเซ็ตสะสม (ไฟตก, watchdog, panic) + กล่องดำครั้งล่าสุด
 void printBoots() {
   const Stats& s = storage::stats();
   Serial.printf("รีเซ็ตทั้งหมด %lu ครั้ง | ไฟตก (brownout) %lu | watchdog %lu | panic %lu\n",
@@ -139,6 +144,7 @@ void printBoots() {
     Serial.println("ถ้า BROWNOUT ขึ้นหลายครั้งตอนใช้แบต = ไฟเลี้ยงจ่ายกระแสไม่พอ (ดูคู่มือหัวข้อ WiFi ไม่ขึ้นตอนใช้แบต)");
 }
 
+// คำสั่ง tasks: ตาราง FreeRTOS task (priority, สถานะ, stack ที่เหลือ, CPU%)
 void printTasks() {
   static const char* sys[] = {"loopTask", "IDLE", "wifi", "tiT", "sys_evt", "esp_timer", "Tmr Svc"};
   Serial.printf("%-12s %4s %-9s %9s %6s\n", "task", "prio", "state", "stackFree", "CPU%");
@@ -158,6 +164,7 @@ void printTasks() {
   Serial.printf("total tasks: %lu\n", (unsigned long)uxTaskGetNumberOfTasks());
 }
 
+// คำสั่ง flash: ตาราง partition ในแฟลช 4 MB (app0/app1/nvs/LittleFS/coredump)
 void printFlash() {
   Serial.printf("%-9s %-5s %8s %9s\n", "label", "type", "address", "size");
   for (int t = 0; t <= 1; t++) {
@@ -175,6 +182,7 @@ void printFlash() {
                 (unsigned)storage::fsUsed(), (unsigned)storage::fsTotal());
 }
 
+// พิมพ์ไฟล์จาก LittleFS (เช่น events.log) ไม่เกิน maxBytes
 void printFile(const char* name, size_t maxBytes = 4096) {
   char path[40];
   snprintf(path, sizeof(path), "%s%s", name[0] == '/' ? "" : "/", name);
@@ -187,6 +195,7 @@ void printFile(const char* name, size_t maxBytes = 4096) {
   Serial.println();
 }
 
+// คำสั่ง cfg: ค่าตั้งของ LieEngine
 void printCfg() {
   const Settings& s = storage::settings();
   Serial.printf("baselineSec=%u windowSec=%u preSec=%u s0=%.2f k=%.2f lieP=%.2f truthP=%.2f\n",
@@ -197,6 +206,7 @@ void printCfg() {
                 s.wakeCheckS, s.waveform, s.mode, s.wifiPower);
 }
 
+// คำสั่ง set <ชื่อ> <ค่า>: ตรวจช่วงค่าก่อน แล้วบันทึกลง NVS + ใช้กับ engine ทันที
 bool setCfg(const char* key, const char* val) {
   Settings n = storage::settings();
   const float v = atof(val);
@@ -242,6 +252,7 @@ bool setCfg(const char* key, const char* val) {
   return true;
 }
 
+// คำสั่งที่สั่ง LieEngine (baseline, ask, answer, abort, reset) — ล็อก engineMutex กันชนกับ engineTask
 void engineCmd(const char* cmd, const char* arg) {
   bool ok = false;
   const char* what = "";
@@ -278,6 +289,7 @@ void engineCmd(const char* cmd, const char* arg) {
     Serial.println("หมายเหตุ: โหมดใช้งานจริงจะไม่บันทึกข้อนี้เป็นข้อมูลเทรน (พิมพ์ mode train ถ้าต้องการเก็บ)");
 }
 
+// คำสั่ง mode train|detect: สลับโหมดเก็บข้อมูล/ใช้งานจริง
 void cmdMode(int argc, char** argv) {
   if (argc > 1) {
     if (!strcmp(argv[1], "train")) mlrt::setMode(mlrt::MODE_TRAIN);
@@ -290,6 +302,7 @@ void cmdMode(int argc, char** argv) {
     Serial.println("โหมด: ใช้งานจริง (DETECT) — baseline แล้วใช้ ask เพื่อให้ระบบตัดสิน");
 }
 
+// คำสั่ง data: จำนวนข้อมูลเทรนในนาฬิกา / data clear confirm = ล้าง
 void cmdData(int argc, char** argv) {
   if (argc > 1 && !strcmp(argv[1], "clear")) {
     if (argc < 3 || strcmp(argv[2], "confirm")) { Serial.println("ข้อมูลจะหายทั้งหมด! พิมพ์: data clear confirm"); return; }
@@ -305,6 +318,7 @@ void cmdData(int argc, char** argv) {
   if (t + l < 20) Serial.println("แนะนำ: เก็บอย่างน้อยอย่างละ 15-20 ข้อ จากหลาย ๆ คน ก่อนเทรน");
 }
 
+// คำสั่ง model: ดูโมเดล AI ที่ติดตั้ง / model clear = ลบ
 void cmdModel(int argc, char** argv) {
   if (argc > 1 && !strcmp(argv[1], "clear")) {
     mlrt::clearModel();
@@ -322,6 +336,7 @@ void cmdModel(int argc, char** argv) {
   Serial.printf("  bias    %+.3f\n", m.b);
 }
 
+// คำสั่ง sleep: ตั้งการหลับอัตโนมัติ (off / ตัวเลขนาที) หรือสั่งหลับทันที
 void cmdSleep(int argc, char** argv) {
   Settings& st = storage::settings();
   if (argc > 1) {
@@ -351,6 +366,7 @@ void cmdSleep(int argc, char** argv) {
   else Serial.println("หลับอัตโนมัติ: ปิด (นาฬิกาจะไม่หลับเอง)");
 }
 
+// คำสั่ง wifi low|mid|high: ระดับกำลังส่ง WiFi (ต่ำ = ประหยัดไฟ/ลดกระแสกระชาก)
 void cmdWifi(int argc, char** argv) {
   if (argc > 1) {
     uint8_t lv = 1;
@@ -365,6 +381,7 @@ void cmdWifi(int argc, char** argv) {
   Serial.printf("กำลังส่ง WiFi: %s\n", net::powerName(net::powerLevel()));
 }
 
+// แยกคำในบรรทัดคำสั่ง แล้วเรียกฟังก์ชันของคำสั่งนั้น (ไม่รู้จัก = แนะนำให้พิมพ์ help)
 void execute(char* line) {
   char* argv[4] = {nullptr, nullptr, nullptr, nullptr};
   int argc = 0;
@@ -462,6 +479,7 @@ namespace {
 uint32_t s_lastRx = 0;     // เวลาที่ได้ตัวอักษรล่าสุด
 bool s_burst = false;      // บรรทัดนี้มาเป็นก้อน (Serial Monitor ส่งทั้งคำ) ไม่ใช่พิมพ์ทีละตัว
 
+// จบ 1 บรรทัด: echo แล้วรันคำสั่ง
 void runLine() {
   Serial.println();
   s_line[s_len] = 0;
@@ -472,6 +490,7 @@ void runLine() {
 }
 }  // namespace
 
+// loopTask เรียกตลอด: อ่านตัวอักษรจาก Serial ทีละตัว, Enter = รันคำสั่ง, เงียบเกิน 300 ms = รันให้เอง (Line ending = None)
 void poll() {
   // เปิด Serial Monitor เมื่อไร -> แสดงข้อความต้อนรับ (คอมเริ่มอ่านข้อมูล = connected)
   const bool host = (bool)Serial;

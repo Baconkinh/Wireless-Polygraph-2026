@@ -79,6 +79,7 @@ void resultEvent(const lie::Result& r) {
   app::pushEvent(js);
 }
 
+// แปลงผล 1 ข้อเป็นบรรทัด CSV แล้วส่งเข้า logQueue (supervisor เขียนลง /results.csv)
 void resultCsv(const lie::Result& r) {
   using lie::Engine;
   LogMsg m;
@@ -94,6 +95,7 @@ void resultCsv(const lie::Result& r) {
   xQueueSend(app::logQueue, &m, 0);
 }
 
+// นับสถิติสะสม: จำนวนคำถาม/โกหก/จริง/ไม่แน่ชัด
 void countResult(const lie::Result& r) {
   Stats& s = storage::stats();
   s.questions++;
@@ -105,6 +107,7 @@ void countResult(const lie::Result& r) {
   }
 }
 
+// task ตัดสิน (priority 4): รับเฟรมจาก frameQueue -> LieEngine -> ถ้าได้ผลใหม่ ส่ง event/CSV/ข้อมูลเทรน/LED
 void engineTask(void*) {
   wdt::subscribe();
   Vitals v;
@@ -272,12 +275,14 @@ void supervisorTask(void*) {
   }
 }
 
+// สร้าง FreeRTOS task 1 ตัว และจดเวลาเริ่ม (supervisor ใช้ตรวจว่า task ยังมีชีวิต)
 void create(TaskFunction_t fn, TaskId id, uint32_t stack, UBaseType_t prio) {
   app::tasks[id].lastBeatMs = millis();
   xTaskCreate(fn, app::tasks[id].name, stack, nullptr, prio, &app::tasks[id].handle);
 }
 }  // namespace
 
+// สร้างทั้ง 6 task ตามลำดับ priority (เรียกครั้งเดียวจาก setup)
 void startAll() {
   create(sensorTask, T_SENSOR, STACK_SENSOR, PRIO_SENSOR);
   create(engineTask, T_ENGINE, STACK_ENGINE, PRIO_ENGINE);

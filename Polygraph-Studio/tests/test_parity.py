@@ -17,6 +17,7 @@ from backend import lie_engine as le  # noqa: E402
 
 
 def run_python(path):
+    """ป้อนสถานการณ์ทดสอบ (scenario.txt) เข้า LieEngine ฉบับ Python แล้วเก็บผลทุกข้อ"""
     e = le.Engine()
     out, last = [], 0
     for line in open(path, encoding="utf-8"):
@@ -50,6 +51,7 @@ def run_python(path):
 
 
 def main():
+    """เทียบผลฉบับ Python กับผลจากเฟิร์มแวร์ C++ (golden_cpp.txt) ทีละข้อ — ต้องตรงกันทุกข้อ"""
     golden = [l.split() for l in open(os.path.join(HERE, "golden_cpp.txt"), encoding="utf-8")]
     py, eng = run_python(os.path.join(HERE, "scenario.txt"))
     g_res = [g for g in golden if g[0] == "R"]

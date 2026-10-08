@@ -51,6 +51,7 @@ const CHARTS = [
   ['tmp', 'อุณหภูมิผิว (°C)', '--temp'], ['trm', 'มือสั่น (m/s²)', '--trm'],
 ];
 
+// HTML ของกราฟเส้น 4 กราฟ (ชีพจร, GSR, อุณหภูมิ, มือสั่น)
 export function chartsHtml(prefix) {
   return `<div class="charts4">${CHARTS.map(([k, label]) =>
     `<div class="chart-cell"><div class="small muted">${label}</div><div class="chart-box short"><canvas id="${prefix}-c-${k}"></canvas></div></div>`).join('')}</div>`;

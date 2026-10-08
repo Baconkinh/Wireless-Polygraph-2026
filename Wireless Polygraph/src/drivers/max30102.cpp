@@ -36,6 +36,7 @@ constexpr int BYTES_PER_SAMPLE = 6;          // แดง 3 ไบต์ + IR 3 
 constexpr int MAX_CHUNK = 21;                // 21*6 = 126 ไบต์ < บัฟเฟอร์ Wire 128 ไบต์
 }  // namespace
 
+// เขียนค่า 1 ไบต์ลง register ของ MAX30102
 bool Max30102::writeReg(uint8_t reg, uint8_t val) {
   w_->beginTransmission(addr_);
   w_->write(reg);
@@ -43,6 +44,7 @@ bool Max30102::writeReg(uint8_t reg, uint8_t val) {
   return w_->endTransmission() == 0;
 }
 
+// อ่านหลายไบต์ต่อเนื่องจาก register
 bool Max30102::readRegs(uint8_t reg, uint8_t* buf, size_t len) {
   w_->beginTransmission(addr_);
   w_->write(reg);
@@ -56,6 +58,7 @@ bool Max30102::readRegs(uint8_t reg, uint8_t* buf, size_t len) {
   return true;
 }
 
+// ตรวจ PART_ID, รีเซ็ต, ตั้งโหมด SpO2 (IR + แดง) 100 Hz, ความแรง LED, ล้าง FIFO
 bool Max30102::begin(TwoWire& wire, uint8_t addr, uint8_t irLed, uint8_t redLed) {
   w_ = &wire;
   addr_ = addr;
@@ -89,6 +92,7 @@ bool Max30102::begin(TwoWire& wire, uint8_t addr, uint8_t irLed, uint8_t redLed)
   return ok;
 }
 
+// อ่านค่าที่สะสมใน FIFO (แสง IR + แดง) ออกมาทั้งหมด — คืนจำนวนค่า (-1 = อ่านไม่ได้)
 int Max30102::read(Sample* out, int maxN) {
   if (!ok_) return -1;
   uint8_t ptr[3];
@@ -120,6 +124,7 @@ int Max30102::read(Sample* out, int maxN) {
   return got;
 }
 
+// เปิด/ปิดโหมดประหยัดไฟของชิป (ปิด LED) ก่อนหลับ
 bool Max30102::shutdown(bool off) {
   if (!w_) return false;
   uint8_t mode;
@@ -128,6 +133,7 @@ bool Max30102::shutdown(bool off) {
   return writeReg(REG_MODE_CONFIG, mode);
 }
 
+// ตั้งกระแส LED IR/แดง (แรงเกิน = สัญญาณชนเพดาน, อ่อนเกิน = จับชีพจรไม่ได้)
 bool Max30102::setLedCurrent(uint8_t ir, uint8_t red) {
   if (!ok_) return false;
   return writeReg(REG_LED2_PA, ir) && writeReg(REG_LED1_PA, red);

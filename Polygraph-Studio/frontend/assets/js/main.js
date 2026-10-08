@@ -5,7 +5,8 @@ import { S, on } from './store.js';
 import { connectWS } from './ws.js';
 import { $, $$, fmt, toast, STATE_TH, vinfo } from './ui.js';
 
-const TITLES = { home: 'Wireless Polygraph', collect: 'เก็บข้อมูลเทรน AI', results: 'ผลลัพธ์ & รายงาน',
+const TITLES = { home: 'Wireless Polygraph', use: 'ใช้งานจริง', collect: 'เก็บข้อมูลเทรน AI', data: 'ข้อมูล & เทรน AI',
+  results: 'ผลลัพธ์ & รายงาน',
   system: 'ระบบ & อุปกรณ์', guide: 'คู่มือ & หลักการ' };
 const views = {};          // name -> module (หรือ fallback)
 let current = 'home';
@@ -48,6 +49,7 @@ async function loadView(name) {
   return views[name];
 }
 
+// เปลี่ยนหน้า: เน้นเมนู, แสดง section ของหน้านั้น, โหลดโมดูลหน้า (ครั้งแรก), เรียก show()/hide()
 async function show(name) {
   if (name === 'session') name = 'home';  // หน้า "ทดสอบ" เดิมถูกรวมเข้าหน้าหลักแล้ว (ลิงก์เก่ายังใช้ได้)
   if (!TITLES[name]) name = 'home';
@@ -109,8 +111,9 @@ on('event', (e) => {
     case 'baseline_fail': toast('baseline ใช้ไม่ได้: ไม่มีสัญญาณชีพจรและ GSR — ใส่นาฬิกาให้แนบผิวแล้ววัดใหม่', 'err', 9000); break;
     case 'low_batt': toast(`แบตเตอรี่อ่อน (${e.mv} mV) — ควรชาร์จ`, 'warn', 9000); break;
     case 'button': toast(`ปุ่มบนนาฬิกา: ${e.g} → ${e.act}`, 'info'); break;
+    case 'model': toast('นาฬิกาได้รับโมเดล AI ใหม่แล้ว', 'ok'); break;
     case 'result':
-      if (current !== 'home') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
+      if (current !== 'home' && current !== 'use') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
       break;
     default: break;
   }

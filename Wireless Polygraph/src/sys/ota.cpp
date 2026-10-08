@@ -77,6 +77,7 @@ size_t s_uploadSize = 0;
 bool s_pending = false;
 bool s_checked = false;
 
+// สถานะของเฟิร์มแวร์ใน slot OTA เป็นข้อความ
 const char* stateName(esp_ota_img_states_t s) {
   switch (s) {
     case ESP_OTA_IMG_NEW: return "new";
@@ -88,6 +89,7 @@ const char* stateName(esp_ota_img_states_t s) {
   }
 }
 
+// อัปโหลดเฟิร์มแวร์เสร็จ: ตอบผล แล้วรีบูตเข้า slot ใหม่ (ถ้าสำเร็จ)
 void handleUpdateDone() {
   if (!s_authOk) {
     s_srv->send(401, "application/json", "{\"ok\":false,\"error\":\"AUTH\"}");
@@ -107,6 +109,7 @@ void handleUpdateDone() {
   }
 }
 
+// รับไฟล์เฟิร์มแวร์ทีละช่วงแล้วเขียนลง slot OTA ที่ไม่ได้ใช้อยู่ (ตรวจรหัสผ่านก่อน)
 void handleUpload() {
   HTTPUpload& up = s_srv->upload();
   if (up.status == UPLOAD_FILE_START) {
@@ -137,6 +140,7 @@ void handleUpload() {
 }
 }  // namespace
 
+// ลงทะเบียนหน้า /update (ต้องใส่รหัส) + ArduinoOTA + ตรวจว่าเฟิร์มแวร์ใหม่รอยืนยันหรือไม่
 void begin(WebServer& server) {
   s_srv = &server;
   server.on("/update", HTTP_GET, []() {
@@ -180,12 +184,14 @@ void begin(WebServer& server) {
 
 void handle() { ArduinoOTA.handle(); }
 
+// เปิด ArduinoOTA/mDNS ใหม่หลัง WiFi เริ่มใหม่ (เช่น ตื่นจากหลับ)
 void restartNetwork() {
   ArduinoOTA.end();                   // ปิด socket เดิม + MDNS.end()
   ArduinoOTA.begin();                 // เปิดใหม่บน WiFi รอบใหม่
   MDNS.addService("http", "tcp", HTTP_PORT);
 }
 
+// ดูว่า slot ไหนกำลังรัน / slot ไหนรอยืนยัน (ทำครั้งเดียว)
 void scanSlots() {
   if (s_scanned) return;
   s_scanned = true;
@@ -202,6 +208,7 @@ void scanSlots() {
   }
 }
 
+// เฟิร์มแวร์ใหม่ทำงานได้ครบ 20 วินาที + WiFi ใช้ได้ -> ยืนยัน (ไม่งั้นบูตหน้าจะย้อนกลับเวอร์ชันเดิม)
 void serviceVerify() {
   if (!s_checked || !s_pending) return;
   // เงื่อนไข "ทำงานได้จริง": บูตผ่านมาครบเวลา + WiFi ทำงาน + task หลักยังรายงานตัว
@@ -218,11 +225,13 @@ void serviceVerify() {
 
 bool pendingVerify() { return s_pending; }
 
+// ชื่อ slot ที่กำลังรัน (app0 / app1)
 const char* runningLabel() {
   const esp_partition_t* run = esp_ota_get_running_partition();
   return run ? run->label : "?";
 }
 
+// ส่วน JSON สถานะ OTA ในหน้าระบบ
 void appendJson(Json& j) {
   const esp_partition_t* run = esp_ota_get_running_partition();
   const esp_partition_t* boot = esp_ota_get_boot_partition();

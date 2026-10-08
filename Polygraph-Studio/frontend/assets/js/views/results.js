@@ -5,6 +5,7 @@ import { get, del } from '../api.js';
 
 let root, listEl, detailEl, openId = null;
 
+// สร้างหน้าผลลัพธ์: รายการเซสชันซ้าย + รายละเอียดขวา
 export function mount(el) {
   root = el;
   root.innerHTML = `
@@ -20,9 +21,12 @@ export function mount(el) {
   on('result', () => { if (openId) loadDetail(openId, true); });
 }
 
+// กลับมาที่หน้านี้: โหลดรายการใหม่
 export function show() { loadList(); if (openId) loadDetail(openId); }
+// ออกจากหน้านี้
 export function hide() {}
 
+// โหลดรายการเซสชันทั้งหมด
 async function loadList() {
   const rows = await get('/api/sessions', { quiet: true }).catch(() => null);
   if (!rows) { listEl.innerHTML = '<p class="muted">โหลดไม่ได้ — backend เปิดอยู่ไหม?</p>'; return; }
@@ -42,6 +46,7 @@ async function loadList() {
   });
 }
 
+// โหลดรายละเอียดเซสชันที่เลือก (ผลทุกข้อ + ลิงก์ดาวน์โหลด/รายงาน)
 async function loadDetail(id, keepScroll) {
   openId = id;
   const s = await get(`/api/sessions/${id}`, { quiet: true }).catch(() => null);

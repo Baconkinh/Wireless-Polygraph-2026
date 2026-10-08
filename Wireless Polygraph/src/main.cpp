@@ -34,6 +34,7 @@
 #include "sys/ui.h"
 #include "sys/ml_runtime.h"
 
+// นับสถิติการบูตตามสาเหตุ (watchdog, ไฟตก, panic) แล้วเก็บใน EEPROM emulation
 static void countBootReason() {
   const wdt::BootInfo& bi = wdt::bootInfo();
   Stats& st = storage::stats();
@@ -54,6 +55,7 @@ static void countBootReason() {
   storage::saveStats();
 }
 
+// พิมพ์ข้อมูลเริ่มต้นทาง Serial: เวอร์ชัน, สาเหตุการรีเซ็ต, เซนเซอร์ที่เจอ, ชื่อ WiFi
 static void printBanner(bool sensorsOk) {
   const wdt::BootInfo& bi = wdt::bootInfo();
   Serial.println();
@@ -74,6 +76,7 @@ static void printBanner(bool sensorsOk) {
   Serial.println(F("=================================================="));
 }
 
+// Arduino เรียกครั้งเดียวตอนเปิดเครื่อง: Serial -> watchdog -> NVS/LittleFS -> เซนเซอร์ -> WiFi -> สร้าง 6 task
 void setup() {
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE

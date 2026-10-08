@@ -20,6 +20,7 @@ FRONTEND_DIR = os.path.join(ROOT, "frontend")
 
 @dataclass
 class Settings:
+    """ค่าตั้งทั้งหมดของ Studio (ค่าเริ่มต้น = ต่อนาฬิกาจริงที่ 192.168.4.1) — load() ปรับตาม argument"""
     watch_host: str = "192.168.4.1"   # IP ของนาฬิกา (SoftAP ของ ESP32 ใช้ค่านี้เสมอ)
     watch_udp_port: int = 4210        # พอร์ต UDP ที่นาฬิการอรับ "hello"
     watch_http_port: int = 80         # REST API ของนาฬิกา
@@ -34,6 +35,7 @@ class Settings:
 
 
 def load(argv=None) -> Settings:
+    """อ่าน argument จาก command line (เช่น --sim, --port) แล้วคืน Settings ที่ใช้จริง"""
     p = argparse.ArgumentParser(prog="python -m backend", description="Polygraph Studio backend")
     p.add_argument("--watch", help="IP ของนาฬิกา (ค่าเริ่มต้น 192.168.4.1)")
     p.add_argument("--watch-udp", type=int, help="พอร์ต UDP ของนาฬิกา (4210)")

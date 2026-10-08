@@ -49,6 +49,7 @@ const char* f2s(char* buf, size_t n, float v, int dec) {
   return buf;
 }
 
+// ส่ง UDP 1 แพ็กเก็ตถึงผู้รับ 1 ราย (นับ error ถ้าส่งไม่ได้)
 bool sendTo(const Client& c, const char* data, size_t len) {
   if (!s_udp.beginPacket(c.ip, c.port)) { s_err++; return false; }
   s_udp.write((const uint8_t*)data, len);
@@ -57,6 +58,7 @@ bool sendTo(const Client& c, const char* data, size_t len) {
   return true;
 }
 
+// ส่งถึงทุกผู้รับที่ลงทะเบียน (waveClientsOnly = เฉพาะคนที่ขอคลื่นชีพจร)
 void sendAll(const char* data, bool waveClientsOnly) {
   const size_t len = strlen(data);
   for (auto& c : s_clients)
@@ -79,12 +81,14 @@ void sendLegacyCsv() {
     if (c.active && c.csv) sendTo(c, b, len);
 }
 
+// มีผู้รับที่ขอคลื่นชีพจรอยู่ไหม (ไม่มี = ไม่ต้องเสียเวลาสร้างแพ็กเก็ตคลื่น)
 bool anyWave() {
   for (auto& c : s_clients)
     if (c.active && c.wave) return true;
   return false;
 }
 
+// ส่งข้อความทักทาย (รหัสเครื่อง, เวอร์ชัน, เลขบูต, สาเหตุรีเซ็ต) ให้ผู้รับใหม่
 void sendHi(const Client& c) {
   const wdt::BootInfo& bi = wdt::bootInfo();
   char b[320];
@@ -98,6 +102,7 @@ void sendHi(const Client& c) {
   sendTo(c, b, strlen(b));
 }
 
+// รับ "hello" จากคอม/มือถือ: ลงทะเบียนผู้รับ (สูงสุด 3 ราย), ตั้งเวลาจริง, เลือกส่ง JSON หรือ CSV แบบเก่า
 void handleHello(char* msg, IPAddress ip, uint16_t port) {
   s_lastHello = millis();
   app::touchActivity();
@@ -153,6 +158,7 @@ void handleHello(char* msg, IPAddress ip, uint16_t port) {
   }
 }
 
+// อ่านทุกแพ็กเก็ต UDP ที่เข้ามา (hello / ping) แล้วจัดการทีละอัน
 void handleIncoming() {
   int len = s_udp.parsePacket();
   while (len > 0) {
@@ -176,6 +182,7 @@ void handleIncoming() {
   }
 }
 
+// ส่งค่าสด 1 ชุดเป็น JSON (5 ครั้ง/วินาที) — ค่าที่ใช้ไม่ได้ส่งเป็น null
 void sendVitals() {
   const Vitals v = app::getVitals();
   const EngineSnap e = app::getEngineSnap();
@@ -208,6 +215,7 @@ void sendVitals() {
   sendAll(b, false);
 }
 
+// ส่งคลื่นชีพจรช่วงสั้น ๆ (100 Hz) + ตำแหน่งจังหวะหัวใจ ให้หน้าเว็บวาดกราฟ
 void sendWave(const WaveChunk& w) {
   char b[200];
   int n = snprintf(b, sizeof(b), "{\"t\":\"w\",\"seq\":%lu,\"n0\":%lu,\"fs\":%u,\"b\":%u,\"d\":[",
@@ -218,6 +226,7 @@ void sendWave(const WaveChunk& w) {
   sendAll(b, true);
 }
 
+// ลบผู้รับที่ไม่ได้ส่ง hello เกินกำหนด (ปิดแอป/ออกจาก WiFi แล้ว)
 void expireClients(uint32_t now) {
   bool any = false;
   for (auto& c : s_clients) {
@@ -293,6 +302,7 @@ void task(void*) {
   }
 }
 
+// จำนวนผู้รับที่ลงทะเบียนอยู่
 uint8_t clientCount() {
   uint8_t n = 0;
   for (auto& c : s_clients) n += c.active ? 1 : 0;

@@ -51,6 +51,7 @@ void taskJson(Json& j, TaskHandle_t h, const char* name, bool ours, uint32_t sta
 }
 }  // namespace
 
+// สถานะ FreeRTOS task เป็นข้อความ
 const char* taskStateName(int s) {
   switch (s) {
     case 0: return "running";
@@ -62,12 +63,14 @@ const char* taskStateName(int s) {
   }
 }
 
+// จำค่าที่อ่านช้า (ขนาดเฟิร์มแวร์) ไว้ครั้งเดียวตอนบูต
 void cacheSlowValues() {
   // ESP.getSketchSize() ตรวจ hash ทั้ง image ใช้เวลาหลายร้อย ms -> ทำครั้งเดียวใน supervisor
   s_sketchSize = ESP.getSketchSize();
   s_sketchFree = ESP.getFreeSketchSpace();
 }
 
+// สร้าง JSON ของ GET /api/info: ชิป, เฟิร์มแวร์, การบูต, หน่วยความจำ
 void buildInfoJson(Json& j) {
   const wdt::BootInfo& bi = wdt::bootInfo();
   char buf[24];
@@ -104,6 +107,7 @@ void buildInfoJson(Json& j) {
   j.end();
 }
 
+// สร้าง JSON ของ GET /api/system: task, watchdog, แฟลช, NVS, พลังงาน, OTA
 void buildSystemJson(Json& j) {
   const uint32_t now = millis();
   const uint32_t b = app::bits();

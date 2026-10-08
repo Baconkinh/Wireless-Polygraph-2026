@@ -13,6 +13,7 @@ from .main import create_app
 
 
 def lan_ips():
+    """หา IP ของคอมในวง WiFi (แสดงตอนรันแบบ --lan เพื่อให้มือถือเครื่องอื่นเปิดหน้า Studio ได้)"""
     ips = set()
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
@@ -33,6 +34,7 @@ def port_free(host: str, port: int) -> bool:
 
 
 def main():
+    """จุดเริ่มของ run_studio.bat: อ่านค่าตั้ง -> เช็คว่าพอร์ตว่าง -> พิมพ์ที่อยู่หน้าเว็บ -> เปิดเบราว์เซอร์ -> รัน uvicorn"""
     s = config.load()
     if not port_free(s.http_host, s.http_port):
         print("=" * 62)

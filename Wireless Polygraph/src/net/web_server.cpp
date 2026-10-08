@@ -38,6 +38,7 @@ using lie::Engine;
 // ---------------- ตัวช่วยตอบกลับ ----------------
 void sendJson(int code, const String& s) { server.send(code, "application/json", s); }
 
+// ตอบ {ok: true, msg}
 void replyOk(const char* msg = nullptr) {
   Json j(96);
   j.obj().kv("ok", true);
@@ -46,12 +47,14 @@ void replyOk(const char* msg = nullptr) {
   sendJson(200, j.str());
 }
 
+// ตอบ error {ok: false, error, msg} พร้อม HTTP status
 void replyFail(int code, const char* err, const char* msg) {
   Json j(160);
   j.obj().kv("ok", false).kv("error", err).kv("msg", msg).end();
   sendJson(code, j.str());
 }
 
+// รหัส error ของ LieEngine -> ข้อความไทยสำหรับผู้ใช้
 const char* engineErrThai(const char* e) {
   if (!strcmp(e, "NO_BASELINE")) return "ต้องวัด baseline ก่อน";
   if (!strcmp(e, "QUESTION_ACTIVE")) return "กำลังวัดคำถามอยู่ รอให้ครบเวลาก่อน";
@@ -108,6 +111,7 @@ void resultJson(Json& j, const lie::Result& r) {
   j.end();
 }
 
+// สร้าง JSON ค่าสดทุกเซนเซอร์ (GET /api/live และหน้าเว็บในนาฬิกา)
 void liveJson(Json& j) {
   const Vitals v = app::getVitals();
   const EngineSnap e = app::getEngineSnap();
@@ -161,6 +165,7 @@ void liveJson(Json& j) {
   j.end();
 }
 
+// สร้าง JSON สถานะ LieEngine: baseline, การปรับเกณฑ์, ผล n ข้อล่าสุด (GET /api/lie)
 void lieJson(Json& j, int n) {
   // ล็อก engine ตลอดการสร้าง JSON (~ไม่กี่ ms) เพื่อให้ข้อมูลทุกส่วนมาจาก "เวลาเดียวกัน"
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
@@ -228,6 +233,7 @@ void lieJson(Json& j, int n) {
   xSemaphoreGive(app::engineMutex);
 }
 
+// สร้าง JSON ค่าตั้งทั้งหมด (GET /api/config)
 void configJson(Json& j) {
   const Settings& s = storage::settings();
   j.obj();
@@ -242,6 +248,7 @@ void configJson(Json& j) {
   j.end();
 }
 
+// นำค่าตั้งใน NVS ไปใช้กับ LieEngine/เซนเซอร์/WiFi ทันที
 void applySettings() {
   const Settings& s = storage::settings();
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
@@ -253,6 +260,7 @@ void applySettings() {
   if (s.eco != power::eco()) power::setEco(s.eco);
 }
 
+// ส่งเหตุการณ์ไปคอม/มือถือทาง UDP (เช่น model, mode)
 void emitEvent(const char* ev, const char* extra) {
   char js[200];
   snprintf(js, sizeof(js), "{\"t\":\"e\",\"eid\":%lu,\"ev\":\"%s\"%s%s}",
@@ -263,18 +271,21 @@ void emitEvent(const char* ev, const char* extra) {
 // ---------------- handlers ----------------
 void hRoot() { server.send_P(200, "text/html", INDEX_HTML); }
 
+// GET /api/info: ข้อมูลเครื่อง
 void hInfo() {
   Json j(900);
   sysinfo::buildInfoJson(j);
   sendJson(200, j.str());
 }
 
+// GET /api/live: ค่าสด
 void hLive() {
   Json j(900);
   liveJson(j);
   sendJson(200, j.str());
 }
 
+// GET /api/lie?n=24: สถานะ LieEngine + ผลล่าสุด
 void hLie() {
   int n = server.hasArg("n") ? server.arg("n").toInt() : 24;
   if (n < 0) n = 0;
@@ -284,6 +295,7 @@ void hLie() {
   sendJson(200, j.str());
 }
 
+// POST /api/lie/baseline: เริ่มวัดค่าปกติ
 void hBaseline() {
   const float sec = server.hasArg("sec") ? server.arg("sec").toFloat() : 0.0f;
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
@@ -299,6 +311,7 @@ void hBaseline() {
   replyOk("baseline started");
 }
 
+// POST /api/lie/question?qid=&kind=: เริ่มวัด 1 ข้อ
 void hQuestion() {
   lie::Kind kind = lie::Kind::Test;
   if (server.hasArg("kind") && !Engine::kindFromName(server.arg("kind").c_str(), kind))
@@ -319,6 +332,7 @@ void hQuestion() {
   sendJson(200, j.str());
 }
 
+// POST /api/lie/answer?ans=yes|no: บันทึกคำตอบ
 void hAnswer() {
   const bool yes = server.arg("ans") != "no";
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
@@ -329,6 +343,7 @@ void hAnswer() {
   replyOk(yes ? "answer yes" : "answer no");
 }
 
+// POST /api/lie/abort: ยกเลิก
 void hAbort() {
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
   app::engine.abort();
@@ -337,6 +352,7 @@ void hAbort() {
   replyOk("aborted");
 }
 
+// POST /api/lie/reset: เริ่มผู้ตอบคนใหม่
 void hReset() {
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
   app::engine.resetSession();
@@ -346,12 +362,14 @@ void hReset() {
   replyOk("session reset");
 }
 
+// GET /api/config: ค่าตั้ง
 void hConfigGet() {
   Json j(700);
   configJson(j);
   sendJson(200, j.str());
 }
 
+// POST /api/config: เปลี่ยนค่าตั้ง (ตรวจทุกค่าก่อน ผิดตัวเดียว = ไม่เปลี่ยนเลย)
 void hConfigSet() {
   Settings n = storage::settings();   // แก้สำเนาก่อน ผ่านการตรวจทุกตัวแล้วค่อยบันทึก
   bool bad = false;
@@ -386,6 +404,7 @@ void hConfigSet() {
   sendJson(200, j.str());
 }
 
+// POST /api/config/reset: คืนค่าเริ่มต้น
 void hConfigReset() {
   storage::resetSettings();
   applySettings();
@@ -395,12 +414,14 @@ void hConfigReset() {
   sendJson(200, j.str());
 }
 
+// GET /api/system: FreeRTOS task, watchdog, แฟลช, พลังงาน
 void hSystem() {
   Json j(5000);
   sysinfo::buildSystemJson(j);
   sendJson(200, j.str());
 }
 
+// GET /api/logs?file=: อ่านไฟล์ log ใน LittleFS
 void hLogs() {
   const String which = server.hasArg("file") ? server.arg("file") : String("events");
   const char* path = "/events.log";
@@ -412,16 +433,19 @@ void hLogs() {
   server.send(200, "text/plain; charset=utf-8", out);
 }
 
+// POST /api/logs/clear: ลบไฟล์ log
 void hLogsClear() {
   storage::clearLogs();
   replyOk("logs cleared");
 }
 
+// POST /api/stats/reset: ล้างสถิติสะสม
 void hStatsReset() {
   storage::resetStats();
   replyOk("stats reset");
 }
 
+// POST /api/power: โหมด ECO/ปกติ หรือสั่งหลับแบบ light/deep
 void hPower() {
   const String mode = server.arg("mode");
   const uint32_t sec = server.hasArg("sec") ? (uint32_t)server.arg("sec").toInt() : 0;
@@ -443,11 +467,13 @@ void hPower() {
   replyFail(400, "BAD_MODE", "mode ต้องเป็น normal, eco, light หรือ deep");
 }
 
+// POST /api/restart: รีสตาร์ท (บันทึกสาเหตุไว้ในกล่องดำ)
 void hRestart() {
   power::requestRestart(PR_USER_RESTART);
   replyOk("restarting");
 }
 
+// POST /api/demo: สาธิต watchdog/panic (ต้อง confirm=yes)
 void hDemo() {
   wdt::Demo d;
   if (!wdt::demoFromName(server.arg("type").c_str(), d))
@@ -469,6 +495,7 @@ void hDemo() {
 
 // ทุก request: นับ + ถือว่ามีคนใช้งาน (เลื่อน auto-standby)
 template <void (*Handler)()>
+// ตัวห่อทุก handler: นับ request, ต่อเวลาก่อนหลับ (มีคนใช้งานอยู่) แล้วเรียก handler จริง
 void W() {
   s_requests++;
   app::touchActivity();
@@ -484,6 +511,7 @@ void hMlGet() {
   sendJson(200, j.str());
 }
 
+// POST /api/ml/mode: สลับโหมดเก็บข้อมูล/ใช้งานจริง
 void hMlMode() {
   const String m = server.arg("mode");
   if (m != "train" && m != "detect") return replyFail(400, "BAD_MODE", "mode ต้องเป็น train หรือ detect");
@@ -493,11 +521,13 @@ void hMlMode() {
   replyOk(m == "train" ? "โหมดเก็บข้อมูล (TRAIN)" : "โหมดใช้งานจริง (DETECT)");
 }
 
+// POST /api/ml/subject: ตั้งชื่อผู้ตอบ (เขียนลงข้อมูลเทรน)
 void hMlSubject() {
   mlrt::setSubject(server.arg("name").c_str());
   replyOk(mlrt::subject());
 }
 
+// POST /api/ml/model: รับโมเดล AI จากคอม -> ตรวจ -> เก็บลง NVS -> ใช้ทันที
 void hMlModel() {
   ml::Model m;
   ml::clear(m);
@@ -519,12 +549,14 @@ void hMlModel() {
   replyOk("ติดตั้งโมเดล AI แล้ว");
 }
 
+// POST /api/ml/model/clear: ลบโมเดล กลับไปใช้สูตร
 void hMlModelClear() {
   mlrt::clearModel();
   app::logEvent("ML", "model removed");
   replyOk("ลบโมเดลแล้ว กลับไปใช้สูตรมาตรฐาน");
 }
 
+// GET /api/ml/data.csv: ส่งไฟล์ /train.csv ทีละ 1 KB (ไม่ถือ mutex ระหว่างส่ง กัน watchdog)
 void hMlData() {
   if (!storage::fsOk()) return replyFail(500, "FS", "ระบบไฟล์ใช้งานไม่ได้");
   size_t size = 0;
@@ -560,6 +592,7 @@ void hMlData() {
   }
 }
 
+// POST /api/ml/data/clear: ล้างข้อมูลเทรนในนาฬิกา (ต้อง confirm=yes)
 void hMlDataClear() {
   if (server.arg("confirm") != "yes") return replyFail(400, "NEED_CONFIRM", "ข้อมูลเทรนจะหายทั้งหมด! เพิ่ม confirm=yes");
   storage::clearTrain();
@@ -586,6 +619,7 @@ void hSleep() {
   sendJson(200, j.str());
 }
 
+// POST /api/wifi?level=0-2: ระดับกำลังส่ง WiFi
 void hWifiPower() {
   const long lv = server.arg("level").toInt();
   if (!server.hasArg("level") || lv < 0 || lv > 2) return replyFail(400, "BAD_VALUE", "level ต้องเป็น 0 (ต่ำ), 1 (กลาง) หรือ 2 (สูง)");
@@ -612,6 +646,7 @@ void hTime() {
   replyOk("time set");
 }
 
+// ไม่มี path นี้: ตอบ CORS preflight หรือ 404 เป็น JSON
 void hNotFound() {
   if (server.method() == HTTP_OPTIONS) {   // CORS preflight
     server.send(204);
@@ -658,6 +693,7 @@ void begin() {
   server.begin();
 }
 
+// httpTask (priority 2): รับ request ของเว็บเซิร์ฟเวอร์ + OTA วนตลอด และป้อน watchdog
 void task(void*) {
   wdt::subscribe();
   for (;;) {

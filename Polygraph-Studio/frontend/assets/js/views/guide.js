@@ -12,6 +12,7 @@ const WEIGHTS = [
   ['ผิวเย็นลง', 8, 'var(--temp)'],
 ];
 
+// สร้างหน้าคู่มือ (ข้อความคงที่ ไม่ต้องโหลดข้อมูล)
 export function mount(el) {
   if (mounted) return;
   mounted = true;
@@ -22,7 +23,9 @@ export function mount(el) {
       <div class="kv">
         <span>Wireless Polygraph</span><span>หน้าหลัก: ค่าสด 6 ช่อง + กราฟเรียลไทม์ · ซ้าย = ทดสอบแบบเซสชัน (ถามต่อกันหลายข้อ มีรายงาน)
           · ขวา = ควบคุมด่วนทีละข้อ + ตั้งค่าการหลับ/ECO/WiFi</span>
-        <span>เก็บข้อมูลเทรน AI</span><span>เก็บข้อมูลทีละข้อแบบ fix/manual แสดงข้อที่ (qid) ไฟล์ที่บันทึก ใครถาม-ใครตอบ เส้นนับถอยหลัง 12 วินาที</span>
+        <span>ใช้งานจริง</span><span>ถามคำถามจริง นาฬิกาตัดสินด้วยโมเดล AI ล่าสุด แล้วกดบอกว่าตอบ ถูก / ผิด / ไม่ทราบ (วัดความแม่นยำจริง + ได้ข้อมูลเทรนเพิ่ม)</span>
+        <span>เก็บข้อมูลเทรน AI</span><span>เก็บข้อมูลทีละข้อแบบ fix/manual แสดงข้อที่ (qid) ไฟล์ที่บันทึก ใครถาม-ใครตอบ เส้นนับถอยหลัง 12 วินาที + ประวัติทุกข้อที่เคยบันทึก</span>
+        <span>ข้อมูล &amp; เทรน AI</span><span>รายการไฟล์ result_*.csv, เลือกไฟล์ที่ใช้เทรน, รวมไฟล์, นำเข้า/ดึงข้อมูลจากนาฬิกา, ปุ่มเทรน, โมเดลในคอม ↔ ในนาฬิกา (ส่งอัตโนมัติ)</span>
         <span>ผลลัพธ์ &amp; รายงาน</span><span>ประวัติทุกเซสชัน ดาวน์โหลด CSV รายงานพิมพ์ได้ (สลับสว่าง/มืด)</span>
         <span>ระบบ &amp; อุปกรณ์</span><span>แผนที่หน่วยความจำแฟลช, FreeRTOS task, watchdog, พลังงาน, OTA, ตั้งค่า LieEngine</span>
         <span>ความหมายข้อมูล</span><span><a href="/report-data-dictionary" target="_blank">Data Dictionary</a> — อธิบายทุกตาราง/คอลัมน์ใน CSV และฐานข้อมูล</span>
@@ -56,14 +59,15 @@ export function mount(el) {
     <div class="card span2">
       <h3>${I('chip')} AI (Machine Learning) — เก็บข้อมูล → เทรน → ใช้งานจริง</h3>
       <ol>
-        <li><b>เก็บข้อมูล:</b> เมนู <b>"เก็บข้อมูลเทรน AI"</b> ใน Studio → กรอกชื่อผู้ตอบ/ผู้ถาม เลือกโหมด
+        <li><b>เก็บข้อมูล:</b> เมนู <b>"เก็บข้อมูลเทรน AI"</b> → กรอกชื่อผู้ตอบ/ผู้ถาม เลือกโหมด
         <b>fix</b> (บอกเฉลยก่อนถาม) หรือ <b>manual</b> (ผู้ตอบบอกเฉลยหลังตอบ) → วัดค่าปกติ → ถามทีละข้อ
-        ทุกข้อบันทึกลง CSV ในคอม (<span class="mono">data\signals_*.csv, results_*.csv, training_samples.csv</span>)
-        — ใช้ <span class="mono">collect_data.bat</span> หรือหน้าเว็บนาฬิกาแทนได้</li>
-        <li><b>เทรน:</b> กด "ดาวน์โหลด CSV" ไว้ในโฟลเดอร์ <span class="mono">Polygraph-Studio\\data</span> แล้วดับเบิลคลิก
-        <span class="mono">train_ai.bat</span> — ได้ <span class="mono">data\\model.json</span> พร้อมความแม่นยำจาก cross-validation</li>
-        <li><b>ใช้งานจริง:</b> อัปโหลด model.json ที่หน้าเว็บนาฬิกา (การ์ด "โมเดล AI") แล้วเลือกโหมด <b>"ใช้งานจริง"</b>
-        ผลทุกข้อจะบอกว่า "ตัดสินด้วยโมเดล AI"</li>
+        → ได้ไฟล์ <span class="mono">data\\result_&lt;วันเวลา&gt;.csv</span> (1 รอบ = 1 ไฟล์, รูปแบบเดียวที่ใช้เทรน)
+        — ใช้ <span class="mono">collect_data.bat</span> แทนได้ (ได้ไฟล์แบบเดียวกัน)</li>
+        <li><b>เทรน:</b> เมนู <b>"ข้อมูล &amp; เทรน AI"</b> → ติ๊กไฟล์ที่จะใช้ → กด <b>เทรน AI</b>
+        (หรือดับเบิลคลิก <span class="mono">train_ai.bat</span> — อ่านเฉพาะ result_*.csv เหมือนกัน) → ได้ <span class="mono">data\\model.json</span></li>
+        <li><b>ส่งเข้านาฬิกา:</b> อัตโนมัติ — Studio เทียบโมเดลในคอมกับในนาฬิกาทุก 4 วินาที ถ้าไม่ตรงก็ส่งให้เอง
+        (ปิดได้ แล้วเลือกส่งเองที่หน้า "ข้อมูล &amp; เทรน AI" หรือ <span class="mono">train_ai_upload.bat</span>)</li>
+        <li><b>ใช้งานจริง:</b> เมนู <b>"ใช้งานจริง"</b> → ถาม → ดูผล → กด ถูก/ผิด/ไม่ทราบ — ข้อที่รู้คำตอบนำไปเทรนรอบต่อไปได้</li>
       </ol>
       <p class="small muted">โมเดลคือ Logistic Regression 12 ค่า (z และส่วนต่างของ 5 สัญญาณ + มี/ไม่มี GSR/ชีพจร)
       คำนวณบน ESP32-C3 เอง ไม่ต้องต่อคอม | ความแม่นยำที่ได้มาจาก "โกหกตามคำสั่ง" จึงใช้ได้กับสถานการณ์ทดลองนี้เท่านั้น</p>
@@ -111,5 +115,7 @@ export function mount(el) {
     </div>
   </div>`;
 }
+// ไม่ต้องทำอะไร
 export function show() {}
+// ไม่ต้องทำอะไร
 export function hide() {}

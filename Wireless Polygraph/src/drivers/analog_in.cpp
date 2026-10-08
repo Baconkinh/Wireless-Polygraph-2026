@@ -10,6 +10,7 @@
 
 namespace analog {
 
+// ตั้ง ADC 12 บิต + ช่วงวัด 0-3.1 V (11 dB) ของขา NTC, GSR, แบต
 void begin() {
   analogReadResolution(12);
   analogSetPinAttenuation(PIN_NTC, ADC_11db);
@@ -17,6 +18,7 @@ void begin() {
   analogSetPinAttenuation(PIN_VBAT, ADC_11db);
 }
 
+// อ่านแรงดัน (mV, ปรับเทียบจากโรงงานแล้ว) เฉลี่ย n ครั้งเพื่อลด noise
 float readMv(uint8_t pin, uint8_t n) {
   if (n == 0) n = 1;
   uint32_t s = 0;

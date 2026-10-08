@@ -1,0 +1,30 @@
+=== 2026-10-08 18:15:47.202 ===
+results_20261008_134705.csv -> result_20261008_134705.csv: 18 ข้อ
+results_20261008_135934.csv -> result_20261008_135934.csv: 2 ข้อ, ผลค้างจากรอบก่อน 2 ข้อ (ไม่ใช้เทรน ดูคอลัมน์ note)
+results_20261008_140045.csv -> result_20261008_140045.csv: 2 ข้อ, ผลค้างจากรอบก่อน 2 ข้อ (ไม่ใช้เทรน ดูคอลัมน์ note)
+results_20261008_164801.csv -> result_20261008_164801.csv: 33 ข้อ, กู้เวลาที่ Excel ตัดทิ้ง 33 แถว
+polygraph_train.csv: เพิ่ม 3 ข้อ ลงไฟล์ result_20261007_212215.csv
+watch_train_20261007_203055.csv: เพิ่ม 1 ข้อ ลงไฟล์ result_20261007_203055.csv
+watch_train_20261008_170335.csv: เพิ่ม 7 ข้อ ลงไฟล์ result_20261008_170335.csv (ข้ามข้อซ้ำ 1)
+watch_train_20261008_170358.csv: ไม่มีข้อใหม่ (ซ้ำกับที่มีอยู่แล้ว 8 ข้อ) — ไม่ได้สร้างไฟล์
+watch_train_20261008_172727.csv: ไม่มีข้อใหม่ (ซ้ำกับที่มีอยู่แล้ว 8 ข้อ) — ไม่ได้สร้างไฟล์
+training_samples.csv: แถวที่ไม่มีคู่ 1 ข้อ — เพิ่ม 1 ข้อ ลงไฟล์ result_20261008_165419.csv
+results_20261008_134705.csv -> old_format/results_20261008_134705.csv
+results_20261008_135934.csv -> old_format/results_20261008_135934.csv
+results_20261008_140045.csv -> old_format/results_20261008_140045.csv
+results_20261008_164801.csv -> old_format/results_20261008_164801.csv
+polygraph_train.csv -> old_format/polygraph_train.csv
+watch_train_20261007_203055.csv -> old_format/watch_train_20261007_203055.csv
+watch_train_20261008_170335.csv -> old_format/watch_train_20261008_170335.csv
+watch_train_20261008_170358.csv -> old_format/watch_train_20261008_170358.csv
+watch_train_20261008_172727.csv -> old_format/watch_train_20261008_172727.csv
+training_samples.csv -> old_format/training_samples.csv
+model_lr-20261008-1725.json -> models/model_lr-20261008-1725.json
+model_lr-20261008-1727.json -> models/model_lr-20261008-1727.json
+signals_20261007_202943.csv -> signals/signals_20261007_202943.csv
+signals_20261007_203146.csv -> signals/signals_20261007_203146.csv
+signals_20261007_205159.csv -> signals/signals_20261007_205159.csv
+signals_20261008_134705.csv -> signals/signals_20261008_134705.csv
+signals_20261008_135934.csv -> signals/signals_20261008_135934.csv
+signals_20261008_140045.csv -> signals/signals_20261008_140045.csv
+signals_20261008_164801.csv -> signals/signals_20261008_164801.csv

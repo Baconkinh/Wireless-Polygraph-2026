@@ -27,6 +27,7 @@ volatile uint32_t s_hwLastFeed = 0;
 const char* volatile s_suspect = "supervisor";
 volatile uint8_t s_demo = DEMO_NONE;
 
+// คัดลอกชื่อ task ลงกล่องดำแบบไม่ล้น buffer
 void copyName(char* dst, size_t n, const char* src) {
   size_t i = 0;
   if (src)
@@ -87,6 +88,7 @@ void captureBootInfo() {
 
 const BootInfo& bootInfo() { return s_boot; }
 
+// สาเหตุการรีเซ็ตของชิปเป็นข้อความอังกฤษ
 const char* resetReasonName(esp_reset_reason_t r) {
   switch (r) {
     case ESP_RST_POWERON:   return "POWERON";
@@ -103,6 +105,7 @@ const char* resetReasonName(esp_reset_reason_t r) {
   }
 }
 
+// สาเหตุการรีเซ็ตเป็นคำอธิบายภาษาไทย (แสดงในหน้าเว็บ/Serial)
 const char* resetReasonThai(esp_reset_reason_t r) {
   switch (r) {
     case ESP_RST_POWERON:   return "เพิ่งจ่ายไฟ (ถ้าเกิดเองระหว่างใช้ = ไฟกระตุก/หน้าสัมผัสหลวม)";
@@ -118,6 +121,7 @@ const char* resetReasonThai(esp_reset_reason_t r) {
   }
 }
 
+// สาเหตุที่ตั้งใจรีเซ็ต (จากกล่องดำ) เป็นข้อความ
 const char* plannedReasonName(uint32_t pr) {
   switch (pr) {
     case PR_USER_RESTART: return "user_restart";
@@ -133,6 +137,7 @@ const char* plannedReasonName(uint32_t pr) {
   }
 }
 
+// รีเซ็ตเพราะ watchdog ชั้นใดชั้นหนึ่งหรือไม่
 bool isWdtReset(esp_reset_reason_t r) {
   return r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT;
 }
@@ -169,6 +174,7 @@ void beginHwWdt() {
   s_hwLastFeed = millis();
 }
 
+// ป้อน hardware timer watchdog (นับใหม่จาก 0) — supervisor เรียกเมื่อทุก task ยังมีชีวิต
 void feedHw() {
   if (!s_hwTimer || s_hwPaused) return;
   if (s_demo == DEMO_HWWDT) return;                     // สาธิต: แกล้งไม่ป้อน
@@ -177,6 +183,7 @@ void feedHw() {
   s_hwLastFeed = millis();
 }
 
+// หยุด/เดิน hardware watchdog ชั่วคราว (ระหว่างหลับ)
 void setHwPaused(bool paused) {
   if (!s_hwTimer) return;
   s_hwPaused = paused;
@@ -201,6 +208,7 @@ bool requestDemo(Demo d) {
 Demo pendingDemo() { return (Demo)s_demo; }
 void clearDemo() { s_demo = DEMO_NONE; }
 
+// ชื่อการสาธิต watchdog เป็นข้อความ
 const char* demoName(Demo d) {
   switch (d) {
     case DEMO_TWDT:   return "twdt";
@@ -211,6 +219,7 @@ const char* demoName(Demo d) {
   }
 }
 
+// แปลงชื่อการสาธิตจาก API เป็น enum
 bool demoFromName(const char* s, Demo& out) {
   if (!s) return false;
   if (!strcmp(s, "twdt"))   { out = DEMO_TWDT; return true; }
@@ -220,6 +229,7 @@ bool demoFromName(const char* s, Demo& out) {
   return false;
 }
 
+// ทำให้ระบบค้าง/ล่มตามแบบที่สาธิต (เพื่อดู watchdog แต่ละชั้นทำงาน)
 void crashNow(Demo d, const char* task) {
   Serial.flush();
   switch (d) {

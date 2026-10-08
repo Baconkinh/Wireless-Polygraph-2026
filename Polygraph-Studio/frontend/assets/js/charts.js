@@ -4,6 +4,7 @@ import { cssVar } from './ui.js';
 
 const VCOL = { lie: '--lie', truth: '--truth', inconclusive: '--inc', invalid: '--invalid' };
 
+// ตั้งฟอนต์/สีของ Chart.js ให้ตรงกับธีมสว่าง/มืดของหน้าเว็บ
 export function chartTheme() {
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.color = cssVar('--muted');
@@ -64,6 +65,7 @@ export function liveLine(canvas, series, { y = {}, y2 = null, windows = true } =
   });
 }
 
+// เติมข้อมูลย้อนหลัง 2 นาทีจาก S.hist ลงกราฟเส้น แล้วสั่งวาดใหม่ (ไม่มี animation ให้ลื่น)
 export function updateLive(chart, keys) {
   const now = Date.now();
   const t = S.hist.t;
@@ -78,6 +80,7 @@ export function updateLive(chart, keys) {
 export function startScope(canvas) {
   const ctx = canvas.getContext('2d');
   let lo = -500, hi = 500;
+  // วาดคลื่นชีพจร (PPG) ลง canvas เอง (เร็วกว่า Chart.js สำหรับข้อมูล 100 จุด/วินาที)
   function draw() {
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth, hgt = canvas.clientHeight;
@@ -121,6 +124,7 @@ export function startScope(canvas) {
       ctx.textAlign = 'start';
     }
   }
+  // วนวาดทุกเฟรมของเบราว์เซอร์ (requestAnimationFrame)
   function loop() {
     if (canvas.offsetParent !== null) draw();   // วาดเฉพาะตอนมองเห็น (ประหยัด CPU)
     requestAnimationFrame(loop);
@@ -133,11 +137,13 @@ function polar(cx, cy, r, deg) {
   const a = (deg * Math.PI) / 180;
   return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
 }
+// path SVG ของส่วนโค้ง (ใช้วาดหน้าปัดเกจ)
 function arc(cx, cy, r, d0, d1) {
   const [x0, y0] = polar(cx, cy, r, d0), [x1, y1] = polar(cx, cy, r, d1);
   return `M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}`;
 }
 
+// สร้างเกจครึ่งวงกลม (เขียว-เหลือง-แดง) แสดงโอกาสโกหก — คืนฟังก์ชันสำหรับขยับเข็ม
 export function makeGauge(svg, { label = '' } = {}) {
   const cx = 110, cy = 112, r = 88;
   const seg = (p0, p1, col) => `<path d="${arc(cx, cy, r, 180 - p0 * 1.8, 180 - p1 * 1.8)}" stroke="var(${col})" stroke-width="16" fill="none" stroke-linecap="butt" opacity=".85"/>`;

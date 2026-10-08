@@ -19,11 +19,16 @@ import httpx
 
 
 class WatchError(Exception):
+    """ติดต่อนาฬิกาไม่ได้/นาฬิกาตอบผิดรูปแบบ — main.py แปลงเป็น HTTP 503 พร้อมข้อความไทย"""
     pass
 
 
 class WatchLink(asyncio.DatagramProtocol):
+    """การเชื่อมต่อกับนาฬิกา 1 เครื่อง: UDP (ค่าสด 5 ครั้ง/วินาที, คลื่น PPG, เหตุการณ์) + HTTP (สั่งงาน/อ่านค่าตั้ง)
+    ทุกข้อมูลที่ได้ส่งต่อให้ listener (sessions.Interrogation) ซึ่งกระจายต่อไปหน้าเว็บ/ไฟล์/ฐานข้อมูล
+    """
     def __init__(self, cfg, listener):
+        """เตรียมตัวแปรสถานะ (ยังไม่เปิด socket — เปิดใน start())"""
         self.cfg = cfg
         self.listener = listener            # Interrogation (sessions.py)
         self.transport: Optional[asyncio.DatagramTransport] = None
@@ -65,6 +70,7 @@ class WatchLink(asyncio.DatagramProtocol):
                        asyncio.create_task(self._monitor_loop())]
 
     async def stop(self):
+        """ปิด task ทั้งหมด + socket UDP + HTTP client ตอนปิดโปรแกรม"""
         for t in self._tasks:
             t.cancel()
         if self.transport:
@@ -80,12 +86,14 @@ class WatchLink(asyncio.DatagramProtocol):
                 pass   # ยังไม่ได้ต่อ WiFi ของนาฬิกา -> ลองใหม่รอบหน้า
 
     async def _hello_loop(self):
+        """ส่ง "hello" ทุก 2 วินาที: นาฬิกาจะส่งข้อมูลมาหาคอมเครื่องที่ส่ง hello ล่าสุด (และได้เวลาจริงไปตั้งนาฬิกา)"""
         while True:
             # t = เวลาจริงจากคอม (นาฬิกาไม่มี RTC) ใช้ประทับเวลาใน log ของนาฬิกา
             self._send(f"hello t={int(time.time())} w=1 id=studio")
             await asyncio.sleep(2.0)
 
     async def _ping_loop(self):
+        """วัดความหน่วง (RTT) ของ WiFi ทุก 5 วินาที แสดงที่แถบบนของหน้าเว็บ"""
         while True:
             await asyncio.sleep(5.0)
             if self.connected:
@@ -97,6 +105,7 @@ class WatchLink(asyncio.DatagramProtocol):
                     self._pings.pop(k, None)
 
     async def _monitor_loop(self):
+        """ตรวจทุก 1 วินาทีว่ายังได้ข้อมูลอยู่ไหม (เงียบเกิน 3.5 วินาที = หลุด) แล้วแจ้งหน้าเว็บ"""
         while True:
             await asyncio.sleep(1.0)
             alive = time.time() - self.last_rx < 3.5
@@ -107,6 +116,7 @@ class WatchLink(asyncio.DatagramProtocol):
             self.listener.on_status(self.status())
 
     def datagram_received(self, data: bytes, addr):
+        """asyncio เรียกเมื่อได้ UDP 1 แพ็กเก็ต: แยกชนิด (v ค่าสด, w คลื่น, e เหตุการณ์, hi ทักทาย, pong) แล้วส่งต่อ"""
         # รับเฉพาะจาก IP ของนาฬิกา (กันแพ็กเก็ตแปลกปลอมในวง WiFi)
         if addr[0] != self.cfg.watch_host:
             return
@@ -146,6 +156,7 @@ class WatchLink(asyncio.DatagramProtocol):
                 self.stats["rtt_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
     def _on_vitals(self, v: Dict[str, Any]):
+        """ค่าสด 1 ชุด: นับแพ็กเก็ตที่หายจากเลข seq แล้วส่งต่อให้ listener"""
         self.stats["rx_v"] += 1
         seq = v.get("seq")
         if self._seq_v is not None and isinstance(seq, int):
@@ -164,6 +175,7 @@ class WatchLink(asyncio.DatagramProtocol):
             self.schedule_lie_sync()
 
     def _on_hi(self, hi: Dict[str, Any]):
+        """นาฬิกาทักทาย (ตอนต่อครั้งแรก/หลังรีบูต): จำรหัสบูต ถ้าเปลี่ยน = นาฬิการีบูต"""
         new_key = f"{hi.get('id')}#{hi.get('boot')}"
         rebooted = bool(self.boot_key) and new_key != self.boot_key
         self.device = hi
@@ -174,6 +186,7 @@ class WatchLink(asyncio.DatagramProtocol):
         asyncio.get_running_loop().create_task(self._after_hi(rebooted))
 
     async def _after_hi(self, rebooted: bool):
+        """หลังทักทาย: อ่านข้อมูลเครื่อง (/api/info) แล้วดึงประวัติผลคำถามมาให้ตรงกัน"""
         try:
             self.info = await self.get("/api/info")
         except WatchError:
@@ -189,6 +202,7 @@ class WatchLink(asyncio.DatagramProtocol):
         self._lie_task = asyncio.get_running_loop().create_task(self._lie_sync())
 
     async def _lie_sync(self):
+        """ดึง /api/lie (สถานะ baseline + ผล 24 ข้อล่าสุด) — กันผลหายถ้า UDP หล่น"""
         while True:
             self._lie_again = False
             try:
@@ -209,6 +223,7 @@ class WatchLink(asyncio.DatagramProtocol):
         return self._parse(r)
 
     async def post(self, path: str, **params) -> Dict[str, Any]:
+        """POST ไปนาฬิกาโดยใส่ค่าใน query string (เช่น /api/lie/question?qid=600&kind=test)"""
         try:
             r = await self.http.post(path, params={k: v for k, v in params.items() if v is not None})
         except httpx.HTTPError as e:
@@ -216,7 +231,17 @@ class WatchLink(asyncio.DatagramProtocol):
             raise WatchError(f"นาฬิกาไม่ตอบ ({type(e).__name__}) — ต่อ WiFi \"Polygraph-Watch\" อยู่หรือไม่?") from e
         return self._parse(r)
 
+    async def post_form(self, path: str, form: Dict[str, Any]) -> Dict[str, Any]:
+        """POST แบบฟอร์ม (body) — ใช้ส่งข้อมูลยาว เช่น โมเดล AI (/api/ml/model) ที่ยาวเกินจะใส่ใน URL"""
+        try:
+            r = await self.http.post(path, data={k: str(v) for k, v in form.items()})
+        except httpx.HTTPError as e:
+            self.stats["http_errors"] += 1
+            raise WatchError(f"นาฬิกาไม่ตอบ ({type(e).__name__}) — ต่อ WiFi \"Polygraph-Watch\" อยู่หรือไม่?") from e
+        return self._parse(r)
+
     async def get_text(self, path: str, **params) -> str:
+        """GET ที่ตอบเป็นข้อความธรรมดา (log, CSV) แทน JSON"""
         try:
             r = await self.http.get(path, params=params or None)
         except httpx.HTTPError as e:
@@ -227,6 +252,7 @@ class WatchLink(asyncio.DatagramProtocol):
 
     @staticmethod
     def _parse(r: httpx.Response) -> Dict[str, Any]:
+        """แปลงคำตอบ HTTP เป็น dict — ถ้าเป็น error (4xx/5xx) ใส่ ok = False ให้เสมอ"""
         try:
             data = r.json()
         except ValueError:
@@ -236,6 +262,7 @@ class WatchLink(asyncio.DatagramProtocol):
         return data
 
     async def upload_firmware(self, filename: str, content: bytes) -> Dict[str, Any]:
+        """ส่งไฟล์เฟิร์มแวร์ใหม่ (OTA) ไปที่ /update ของนาฬิกา พร้อมรหัสผ่าน OTA"""
         files = {"firmware": (filename, content, "application/octet-stream")}
         try:
             r = await self.http.post("/update", files=files, auth=(self.cfg.ota_user, self.cfg.ota_password),

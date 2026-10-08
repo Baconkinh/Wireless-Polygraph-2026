@@ -3,6 +3,7 @@
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// escape ข้อความก่อนใส่ HTML (กันชื่อ/คำถามที่มี < > ทำหน้าเว็บพัง)
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -13,6 +14,7 @@ export function fmt(x, d = 1) {
   return Number(x).toFixed(d);
 }
 
+// จำนวนไบต์ -> B / KB / MB
 export function bytes(n) {
   if (n === null || n === undefined) return '--';
   if (n >= 1048576) return (n / 1048576).toFixed(2) + ' MB';
@@ -20,12 +22,14 @@ export function bytes(n) {
   return n + ' B';
 }
 
+// วินาที -> "x ชม. y นาที" อ่านง่าย
 export function duration(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h ? `${h} ชม. ${m} นาที` : m ? `${m} นาที ${s} วินาที` : `${s} วินาที`;
 }
 
+// epoch -> วันเวลาแบบไทย
 export function timeStr(ts) {
   if (!ts) return '-';
   const d = new Date(ts * 1000);
@@ -110,6 +114,7 @@ export function confirmModal(title, bodyHtml, okText = 'ยืนยัน', dan
   });
 }
 
+// อ่านค่าตัวแปรสีจาก CSS (เปลี่ยนตามธีมสว่าง/มืด)
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }

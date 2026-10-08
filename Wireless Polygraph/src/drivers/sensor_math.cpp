@@ -9,6 +9,7 @@
 
 namespace sensor {
 
+// แรงดันจากวงจรแบ่งแรงดัน NTC -> อุณหภูมิ °C (สมการ Beta)
 float ntcCelsius(float vMv, float vccMv, float r1, float r25, float beta) {
   // ใกล้ 0 V = NTC ขาด/R1 ลัด, ใกล้ Vcc = NTC ลัด/R1 ขาด -> ไม่คำนวณ (จะได้ค่าหลอก)
   if (vMv < 50.0f || vMv > vccMv - 50.0f) return NAN;
@@ -17,6 +18,7 @@ float ntcCelsius(float vMv, float vccMv, float r1, float r25, float beta) {
   return 1.0f / invT - 273.15f;
 }
 
+// แรงดันจากวงจร GSR -> ความนำไฟฟ้าของผิว (µS) — ไม่แตะผิว = 0, ลัดวงจร = NaN
 float gsrMicroSiemens(float vMv, float vccMv, float r2, float r3) {
   if (vMv < GSR_OPEN_MV) return 0.0f;
   if (vMv > GSR_SHORT_MV) return NAN;
@@ -25,6 +27,7 @@ float gsrMicroSiemens(float vMv, float vccMv, float r2, float r3) {
   return 1e6f / rSkin;
 }
 
+// แรงดันแบต -> % (เทียบตารางโค้งการคายประจุ Li-Po ทั่วไป)
 uint8_t batteryPercent(float v) {
   // (mV, %) — จุดอ้างอิงทั่วไปของ Li-Po 1 เซลล์ ไม่ใช่ค่าที่วัดจากแบตก้อนนี้
   static const float pts[][2] = {{4200, 100}, {4100, 90}, {4000, 80}, {3900, 65},

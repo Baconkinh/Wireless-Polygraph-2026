@@ -14,10 +14,12 @@ VERDICT_TH = {"lie": "โกหก", "truth": "พูดจริง", "inconclu
 
 
 def _e(x: Any) -> str:
+    """escape ข้อความก่อนใส่ใน HTML (กันชื่อ/คำถามที่มี < > ทำหน้ารายงานพัง)"""
     return html.escape("" if x is None else str(x))
 
 
 def _fmt_time(ts: Optional[float]) -> str:
+    """epoch -> วัน/เดือน/ปี ชั่วโมง:นาที:วินาที (เวลาเครื่อง)"""
     if not ts:
         return "-"
     return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
@@ -64,6 +66,7 @@ def _series_svg(t: List[float], y: List[Optional[float]], windows: List[Dict[str
 
 
 def _p_bars_svg(rows: List[Dict[str, Any]], w: int = 900, h: int = 200) -> str:
+    """กราฟแท่ง SVG "โอกาสโกหก" ของทุกข้อในเซสชัน (วาดเองไม่ใช้ไลบรารี -> พิมพ์/บันทึก PDF ได้)"""
     rows = [r for r in rows if r["result"]]
     if not rows:
         return '<p class="muted">ยังไม่มีผล</p>'
@@ -89,6 +92,7 @@ def _p_bars_svg(rows: List[Dict[str, Any]], w: int = 900, h: int = 200) -> str:
 
 
 def render(view: Dict[str, Any], samples: Dict[str, List], credits: Optional[Dict[str, Any]] = None) -> str:
+    """สร้างหน้า HTML รายงานของ 1 เซสชัน: สรุป, ตารางผลทุกข้อ, กราฟสัญญาณ, ผู้จัดทำ (สลับสว่าง/มืดได้)"""
     qs = view["questions"]
     t0 = samples["t"][0] if samples.get("t") else (view.get("created") or 0)
     windows = []
@@ -195,6 +199,7 @@ def markdown_page(title: str, md: str) -> str:
     out, in_code, in_table, in_list = [], False, False, False
 
     def close_blocks():
+        """ปิดตาราง/รายการที่เปิดค้างไว้ก่อนขึ้นย่อหน้าใหม่ (ตัวแปลง markdown แบบง่าย)"""
         nonlocal in_table, in_list
         if in_table:
             out.append("</table>")
@@ -204,6 +209,7 @@ def markdown_page(title: str, md: str) -> str:
             in_list = False
 
     def inline(t: str) -> str:
+        """แปลง `โค้ด` และ **ตัวหนา** ในบรรทัด markdown เป็น HTML"""
         t = _e(t)
         t = __import__("re").sub(r"`([^`]+)`", r"<code>\1</code>", t)
         return __import__("re").sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)

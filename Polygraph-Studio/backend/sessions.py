@@ -79,6 +79,7 @@ def normalize_result(r: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def level_of(z: Optional[float]) -> str:
+    """แปลงค่า z (เปลี่ยนไปกี่เท่าของความแกว่งปกติ) เป็นคำอ่านง่าย: ปกติ / เพิ่มเล็กน้อย / เพิ่มชัดเจน ..."""
     if z is None:
         return "ไม่มีข้อมูล"
     if z < 1.0:
@@ -130,7 +131,13 @@ def explain(r: Dict[str, Any], weights: Optional[List[float]]) -> Dict[str, Any]
 
 
 class Interrogation:
+    """ตัวกลางของ Studio: รับทุกอย่างจาก WatchLink แล้วกระจายต่อ
+      - เซสชันทดสอบ (ชุดคำถาม + รายงาน) เก็บใน SQLite
+      - หน้าเก็บข้อมูล/ใช้งานจริง (collector) เขียน result_*.csv
+      - หน้าเว็บ (hub) ได้ค่าสด/เหตุการณ์/ผล
+    """
     def __init__(self, store, hub):
+        """ยังไม่มีเซสชันที่เปิดอยู่ (active = None) — link/collector ถูกผูกทีหลังใน main.py"""
         self.store = store
         self.hub = hub
         self.link = None                      # ตั้งค่าใน main.py หลังสร้าง WatchLink
@@ -152,6 +159,7 @@ class Interrogation:
         return (lie.get("config") or {}).get("w")
 
     def session_view(self, sid: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """ข้อมูลเซสชันครบชุดสำหรับหน้าเว็บ/รายงาน: คำถาม, ผลแต่ละข้อ, คำอธิบายผล, สรุป"""
         sid = sid or self.active
         if not sid:
             return None
@@ -214,6 +222,7 @@ class Interrogation:
         return out
 
     def publish_session(self):
+        """ส่งข้อมูลเซสชันล่าสุดไปทุกหน้าเว็บ (ข้อความชนิด "session")"""
         self.hub.publish("session", self.session_view())
 
     # ------------------------------------------------------------------ session lifecycle
@@ -241,6 +250,7 @@ class Interrogation:
         return self.session_view()
 
     def end(self):
+        """ปิดเซสชันที่เปิดอยู่ (บันทึกเวลาจบ)"""
         if self.active:
             self.store.add_event(self.active, "session_end", {})
             self.store.end_session(self.active)
@@ -263,6 +273,7 @@ class Interrogation:
         return res
 
     async def answer(self, yes: bool) -> Dict[str, Any]:
+        """ผู้ตอบตอบ ใช่/ไม่ใช่ (กดจากหน้าเว็บ) -> บอกนาฬิกา (ใช้คำนวณเวลาตอบ) + บันทึกลงเซสชัน"""
         res = await self.link.post("/api/lie/answer", ans="yes" if yes else "no")
         if res.get("ok") and self.current_q:
             self.store.mark_answer(self.current_q, "yes" if yes else "no", time.time())
@@ -275,6 +286,7 @@ class Interrogation:
         self.hub.publish("status", st)
 
     def on_vitals(self, v: Dict[str, Any]):
+        """ค่าสดทุก 0.2 วินาที: เก็บลง SQLite (ถ้ามีเซสชัน), ส่งให้ collector (ถ้ามีรอบเก็บข้อมูล), ส่งไปหน้าเว็บ"""
         if self.active:
             # ผูกแต่ละแถวกับคำถามที่กำลังถาม -> ไฟล์สัญญาณบอกได้ว่าค่านี้มาจากข้อไหน
             self.store.queue_sample(self.active, v, self.current_q)
@@ -283,9 +295,11 @@ class Interrogation:
         self.hub.publish("vitals", v)
 
     def on_wave(self, w: Dict[str, Any]):
+        """คลื่นชีพจร (PPG) 100 Hz -> ส่งไปหน้าเว็บวาดกราฟอย่างเดียว ไม่บันทึก"""
         self.hub.publish("wave", w)
 
     def on_event(self, e: Dict[str, Any]):
+        """เหตุการณ์จากนาฬิกา (baseline เสร็จ, แบตอ่อน, ปุ่ม, ผลคำถาม ...) -> หน้าเว็บ + บันทึก"""
         self.hub.publish("event", e)
         if e.get("ev") != "result":
             self.store.add_event(self.active, e.get("ev", "?"), e)
@@ -293,12 +307,14 @@ class Interrogation:
             self._ingest(normalize_result(e))
 
     def on_device(self, hi: Dict[str, Any], info: Dict[str, Any], rebooted: bool):
+        """ข้อมูลเครื่อง/การรีบูตของนาฬิกา -> แจ้งหน้าเว็บ และบันทึกถ้ารีบูต"""
         data = {"hi": hi, "info": info, "rebooted": rebooted}
         if rebooted:
             self.store.add_event(self.active, "device_reboot", data)
         self.hub.publish("device", data)
 
     async def on_lie(self, lie: Dict[str, Any]):
+        """สถานะ LieEngine + ผล 24 ข้อล่าสุดจาก /api/lie -> ส่งผลที่ยังไม่เคยเห็นเข้า _ingest (กันผลหายถ้า UDP หล่น)"""
         self.hub.publish("lie", lie)
         results = lie.get("results") or []
         if self.active and self.start_seq is None:
@@ -310,6 +326,9 @@ class Interrogation:
             self._ingest(r)
 
     def _ingest(self, r: Dict[str, Any]):
+        """จัดการผล 1 ข้อ: ของหน้าเก็บข้อมูล/ใช้งานจริง -> collector, ของควบคุมด่วน -> ข้าม,
+        ของเซสชัน -> จับคู่กับคำถาม บันทึก และส่งไปหน้าเว็บ (ตัดผลซ้ำด้วย boot + seq)
+        """
         # ผลของหน้าเก็บข้อมูลเทรน AI (qid 600-799) ไม่ปนกับเซสชันทดสอบ
         if self.collector and self.collector.on_result(r):
             return

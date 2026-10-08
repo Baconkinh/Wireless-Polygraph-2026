@@ -10,6 +10,7 @@ namespace {
 
 inline float clampf(float x, float lo, float hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
+// 1/(1+e^-x) แปลงคะแนนเป็นความน่าจะเป็น 0-1
 inline float sigmoid(float x) {
   if (x > 30.0f) return 1.0f;    // กัน expf ล้น
   if (x < -30.0f) return 0.0f;
@@ -32,6 +33,7 @@ const float kDefaultWeight[F_COUNT] = {0.20f, 0.35f, 0.25f, 0.12f, 0.08f};
 
 }  // namespace
 
+// เริ่มต้นสถานะว่าง (ยังไม่มี baseline) และใช้น้ำหนักจากค่าตั้ง
 Engine::Engine() {
   for (int i = 0; i < F_COUNT; i++) {
     base_.mean[i] = base_.sd[i] = base_.nullMean[i] = base_.nullSd[i] = 0.0f;
@@ -40,6 +42,7 @@ Engine::Engine() {
   configure(cfg_);
 }
 
+// รับค่าตั้งใหม่ (บีบให้อยู่ในช่วงที่ปลอดภัยก่อนใช้)
 void Engine::configure(const Config& c) {
   cfg_ = c;
   cfg_.frameHz = clampf(cfg_.frameHz, 1.0f, 5.0f);
@@ -95,6 +98,7 @@ bool Engine::startBaseline(float sec) {
   return true;
 }
 
+// เริ่มวัด 1 ข้อ (ต้องมี baseline แล้ว และไม่มีข้อค้าง) — จำ qid และชนิดข้อ
 bool Engine::startQuestion(uint16_t qid, Kind kind) {
   if (state_ != State::Ready) {
     if (state_ == State::Question) err_ = "QUESTION_ACTIVE";
@@ -125,6 +129,7 @@ bool Engine::startQuestion(uint16_t qid, Kind kind) {
   return true;
 }
 
+// บันทึกเวลาที่ผู้ตอบตอบ และตอบ ใช่/ไม่ใช่
 bool Engine::markAnswer(bool yes) {
   if (state_ != State::Question) { err_ = "NO_QUESTION"; return false; }
   answerAt_ = (frames_ - phaseStart_) / cfg_.frameHz;
@@ -133,6 +138,7 @@ bool Engine::markAnswer(bool yes) {
   return true;
 }
 
+// ยกเลิก baseline หรือข้อที่กำลังวัด
 void Engine::abort() {
   if (state_ == State::Baseline) state_ = State::Idle;
   else if (state_ == State::Question) state_ = State::Ready;
@@ -140,6 +146,7 @@ void Engine::abort() {
   bump();
 }
 
+// เริ่มผู้ตอบคนใหม่: ล้าง baseline และข้อควบคุมทั้งหมด
 void Engine::resetSession() {
   state_ = State::Idle;
   base_.valid = false;
@@ -158,6 +165,7 @@ const Frame& Engine::hist(int back) const {
   return hist_[(histHead_ - 1 - back + kHist * 2) % kHist];
 }
 
+// ป้อน 1 เฟรม (5 ครั้ง/วินาที): เก็บประวัติ, สะสม baseline หรือจบข้อเมื่อครบเวลาแล้วคำนวณผล
 void Engine::push(const Frame& f) {
   frames_++;
   hist_[histHead_] = f;
@@ -252,6 +260,7 @@ void Engine::computeFeatures(const Frame* pre, int nPre, const Frame* win, int n
   }
 }
 
+// คะแนนรวม = ผลรวม z × น้ำหนัก ของสัญญาณที่ใช้ได้ หารด้วยน้ำหนักรวมของสัญญาณที่ใช้ได้
 float Engine::scoreOf(const float* z, uint8_t okMask, const float* w) const {
   float s = 0.0f, ws = 0.0f;
   for (int i = 0; i < F_COUNT; i++) {
@@ -519,6 +528,7 @@ void Engine::updateStress(const Frame& f) {
   }
 }
 
+// ร่างกายกลับสู่ปกติหลังข้อก่อนหรือยัง (พร้อมถามข้อถัดไป)
 void Engine::updateSettled() {
   if (state_ != State::Ready) { settled_ = false; return; }
   if ((float)(frames_ - lastWindowEnd_) < cfg_.recoverySec * cfg_.frameHz) {
@@ -580,6 +590,7 @@ Status Engine::status() const {
   return s;
 }
 
+// อ่านผลย้อนหลัง (0 = ล่าสุด) จากบัฟเฟอร์วงกลม
 bool Engine::result(uint32_t newestIndex, Result& out) const {
   uint32_t avail = resultSeq_ - firstSeq_;
   if (avail > (uint32_t)kMaxRes) avail = kMaxRes;
@@ -589,6 +600,7 @@ bool Engine::result(uint32_t newestIndex, Result& out) const {
   return true;
 }
 
+// อ่านผลตามเลข seq (ถ้ายังอยู่ในบัฟเฟอร์)
 bool Engine::resultBySeq(uint32_t seq, Result& out) const {
   if (seq == 0 || seq > resultSeq_ || seq <= firstSeq_) return false;
   if (resultSeq_ - seq >= (uint32_t)kMaxRes) return false;
@@ -596,6 +608,7 @@ bool Engine::resultBySeq(uint32_t seq, Result& out) const {
   return true;
 }
 
+// ชื่อสถานะเป็นข้อความ (ใช้ใน JSON/Serial)
 const char* Engine::stateName(State s) {
   switch (s) {
     case State::Idle: return "idle";
@@ -606,6 +619,7 @@ const char* Engine::stateName(State s) {
   return "?";
 }
 
+// ชื่อชนิดข้อเป็นข้อความ: test / truth / lie / warmup
 const char* Engine::kindName(Kind k) {
   switch (k) {
     case Kind::Test: return "test";
@@ -616,6 +630,7 @@ const char* Engine::kindName(Kind k) {
   return "?";
 }
 
+// ชื่อคำตัดสินเป็นข้อความ: truth / lie / inconclusive / invalid
 const char* Engine::verdictName(Verdict v) {
   switch (v) {
     case Verdict::None: return "none";
@@ -627,6 +642,7 @@ const char* Engine::verdictName(Verdict v) {
   return "?";
 }
 
+// แปลงข้อความชนิดข้อจาก API เป็น enum (ไม่รู้จัก = false)
 bool Engine::kindFromName(const char* s, Kind& out) {
   if (!s) return false;
   if (!strcmp(s, "test")) { out = Kind::Test; return true; }

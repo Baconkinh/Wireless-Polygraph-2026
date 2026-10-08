@@ -12,12 +12,11 @@ collect.py — โปรแกรมเก็บข้อมูลเทรน A
 
 ปุ่มที่กดได้ตลอด (Windows ไม่ต้องกด Enter):
   a ยกเลิกข้อนี้   b วัด baseline ใหม่   m สลับโหมด fix <-> manual   s สถานะ
-  d ดาวน์โหลดไฟล์ข้อมูลเทรนจากนาฬิกา   h ช่วยเหลือ   x ออก
+  d ดึงข้อมูลที่นาฬิกาบันทึกเอง (โหมด train บนหน้าเว็บนาฬิกา) มาเป็น result_*.csv   h ช่วยเหลือ   x ออก
 
-ไฟล์ที่ได้อยู่ในโฟลเดอร์ data/ (ความหมายทุกคอลัมน์: DATA_DICTIONARY.md)
-  signals_<วันเวลา>.csv   ค่าเซนเซอร์ 5 ครั้ง/วินาที — ทุกแถวมี question_no + label บอกว่ามาจากข้อไหน เฉลยอะไร
-  results_<วันเวลา>.csv   1 แถว/ข้อ: เฉลย + คำตัดสินของนาฬิกา + ตัวเลขที่ใช้ตัดสิน
-  training_samples.csv    ข้อที่ใช้เทรนได้ (ต่อท้ายไฟล์เดิม) -> train_ai.bat ใช้ไฟล์นี้
+ไฟล์ที่ได้ (ความหมายทุกคอลัมน์: DATA_DICTIONARY.md)
+  data/result_<วันเวลา>.csv            1 แถว/ข้อ: เฉลย + คำตัดสินของนาฬิกา + feature 12 ตัว -> train_ai.bat ใช้ไฟล์นี้
+  data/signals/signals_<วันเวลา>.csv   ค่าเซนเซอร์ 5 ครั้ง/วินาที — ทุกแถวมี question_no + label (ไว้ดูกราฟ ไม่ได้ใช้เทรน)
 
 รัน:  python ml/collect.py                 นาฬิกาจริง (ต่อ WiFi Polygraph-Watch ก่อน)
       python ml/collect.py --sim           นาฬิกาจำลอง (tools/virtual_watch.py)
@@ -38,6 +37,7 @@ import urllib.parse
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import datafiles as df  # noqa: E402
 import polyml as pm  # noqa: E402
 from recorder import RunRecorder  # noqa: E402
 
@@ -51,7 +51,7 @@ HELP = """
   (fix)    t = ข้อนี้ให้ตอบจริง    l = ข้อนี้ให้โกหก        -> เริ่มบันทึกข้อทันที
   (manual) Enter = เริ่มถาม  แล้วหลังหมดเวลา  t = ผู้ตอบพูดจริง  l = ผู้ตอบโกหก  k = ไม่รู้/ข้าม
   a = ยกเลิกข้อนี้       b = วัด baseline ใหม่      m = สลับโหมด fix <-> manual
-  s = สถานะ             d = ดาวน์โหลดไฟล์ข้อมูลเทรนจากนาฬิกา      h = ช่วยเหลือ     x = ออก
+  s = สถานะ             d = ดึงข้อมูลที่นาฬิกาบันทึกเองมาเป็น result_*.csv      h = ช่วยเหลือ     x = ออก
 ใครตัดสินว่าจริงหรือโกหก?  นาฬิกาเป็นคนตัดสิน (LieEngine หรือโมเดล AI ถ้าติดตั้งแล้ว) จากชีพจร แรงชีพจร
   GSR การสั่น และอุณหภูมิผิว ใน 12 วินาทีหลังถาม เทียบกับ baseline — ส่วนเฉลย (t/l) เป็น "คำตอบที่ถูก"
   ที่เราบอกให้ AI เรียนรู้ ไม่ได้ไปเปลี่ยนคำตัดสินของนาฬิกา
@@ -84,7 +84,9 @@ def ask_line(prompt: str, default: str = "") -> str:
 
 
 class Collector:
+    """โปรแกรมเก็บข้อมูลแบบพิมพ์คำสั่ง: คุยกับนาฬิกาทาง UDP (ค่าสด/ผล) + HTTP (สั่งเริ่มข้อ) แล้วให้ RunRecorder เขียนไฟล์"""
     def __init__(self, a):
+        """เปิด socket UDP (พอร์ตสุ่ม เปิดพร้อม Studio ได้) และสร้าง RunRecorder ของรอบนี้"""
         self.a = a
         self.http = a.http
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -96,7 +98,9 @@ class Collector:
         self.last_hello = 0.0
         self.live: dict = {}
         self.window_sec = 12.0
-        self.rec = RunRecorder(DATA, a.subject, a.operator, a.mode, log=lambda s: print("   " + s))
+        self.max_seq = 0                  # seq ของผลล่าสุดที่นาฬิกาส่งมา (กันจับคู่ผลเก่า)
+        self.boot = None                  # เลขบูตของนาฬิกา (seq เริ่มนับใหม่เมื่อรีบูต)
+        self.rec = RunRecorder(DATA, a.subject, a.operator, a.mode, log=lambda s: print("   " + s), source="cli")
         self.progress_shown = False
 
     # ------------------------------------------------------------ UDP (ค่าสด + เหตุการณ์)
@@ -109,6 +113,7 @@ class Collector:
         self.last_hello = time.time()
 
     def handle(self, data: bytes):
+        """แยกชนิดแพ็กเก็ต UDP: v = ค่าสด (ส่งให้ recorder + เส้นนับถอยหลัง), hi = ทักทาย, e = เหตุการณ์ (ตัดซ้ำด้วย eid)"""
         try:
             m = json.loads(data.decode("utf-8", "replace"))
         except ValueError:
@@ -120,6 +125,8 @@ class Collector:
             self.rec.on_vitals(m)
             self.show_progress()
         elif t == "hi":
+            if m.get("boot") != self.boot:
+                self.boot, self.max_seq = m.get("boot"), 0
             print(f"เชื่อมต่อนาฬิกาแล้ว: {m.get('id')}  FW {m.get('fw')}")
         elif t == "e":
             eid = m.get("eid")
@@ -140,23 +147,28 @@ class Collector:
         self.progress_shown = True
 
     def end_progress(self):
+        """จบบรรทัดเส้นนับถอยหลัง (ขึ้นบรรทัดใหม่ก่อนพิมพ์ข้อความอื่น)"""
         if self.progress_shown:
             print()
             self.progress_shown = False
 
     def event(self, m: dict):
+        """เหตุการณ์จากนาฬิกา: ผลคำถาม (จับคู่กับข้อปัจจุบัน), baseline เสร็จ/ไม่สำเร็จ"""
         ev = m.get("ev")
         if ev == "result":
             self.end_progress()
-            r = {"qid": m.get("qid"), "verdict": m.get("verdict"), "p": m.get("p"), "src": m.get("src"),
-                 "quality": m.get("q"), "reasons": m.get("rs"), "ok": m.get("ok"), "feat": m.get("f"), "z": m.get("z")}
+            r = {"seq": m.get("seq"), "qid": m.get("qid"), "verdict": m.get("verdict"), "p": m.get("p"),
+                 "src": m.get("src"), "quality": m.get("q"), "reasons": m.get("rs"), "ok": m.get("ok"),
+                 "feat": m.get("f"), "z": m.get("z")}
+            if isinstance(r["seq"], int):
+                self.max_seq = max(self.max_seq, r["seq"])
             before = self.rec.current
             if not before or before["watch_qid"] != r["qid"] or before["status"] != "asking":
                 return                                  # ไม่ใช่ข้อของรอบนี้ (เช่นถามจากหน้าเว็บ)
             p = float(m.get("p") or 0)
             print(f"   ผลข้อที่ {before['question_no']}: นาฬิกาทายว่า {VERDICT_TH.get(m.get('verdict'), m.get('verdict'))} "
                   f"(โอกาสโกหก {p * 100:.0f}%, ตัดสินด้วย{SRC_TH.get(m.get('src'), '?')}, คุณภาพสัญญาณ {m.get('q')}%)")
-            cur = self.rec.on_result(r)
+            cur = self.rec.on_result(r, boot=self.boot)
             if cur is None:
                 return
             if cur["status"] == "waiting_label":
@@ -172,7 +184,7 @@ class Collector:
     # ------------------------------------------------------------ ข้อความนำทาง
     def prompt_next(self):
         n = self.rec.next_question()
-        f = os.path.basename(self.rec.paths["signals"])
+        f = os.path.basename(self.rec.paths["results"])
         made = "" if self.rec.files_created else " (จะสร้างไฟล์เมื่อเริ่มข้อแรก)"
         print("-" * 70)
         print(f" ข้อถัดไป: ข้อที่ {n['question_no']}  (qid {n['watch_qid']})   โหมด {self.rec.mode}"
@@ -195,10 +207,12 @@ class Collector:
         if not r.get("ok"):
             print("   เริ่มข้อไม่ได้:", r.get("msg", r))
             return
-        self.rec.start_question(self.rec.mode, label)
+        self.rec.start_question(self.rec.mode, label, seq_floor=self.max_seq, boot=self.boot,
+                                min_delay=min(8.0, self.window_sec * 0.6))
         print("   ถามได้เลย! กำลังบันทึก 12 วินาที (กด a เพื่อยกเลิกข้อนี้)")
 
     def cmd(self, k: str):
+        """ทำตามปุ่มที่กด (t, l, Enter, k, a, b, m, s, d, h, x) — ความหมายอยู่ใน HELP"""
         cur = self.rec.current
         waiting = cur is not None and cur["status"] == "waiting_label"
         if waiting and k in ("t", "l", "k"):
@@ -230,18 +244,21 @@ class Collector:
         elif k == "s":
             self.status()
         elif k == "d":
-            out = os.path.join(DATA, time.strftime("watch_train_%Y%m%d_%H%M%S.csv"))
+            # ดึง /api/ml/data.csv แล้วแปลงเป็น result_*.csv (เฉพาะข้อที่ยังไม่มี) — ไม่สร้างไฟล์รูปแบบอื่นอีกแล้ว
+            import tempfile
+            tmp = os.path.join(tempfile.mkdtemp(), "watch_train.csv")
             try:
-                n = pm.download_csv(self.http, out)
-                print(f"ดาวน์โหลดแล้ว: data/{os.path.basename(out)} ({n} ไบต์)")
+                pm.download_csv(self.http, tmp)
+                print("   " + df.import_file(DATA, tmp, origin="นาฬิกา (/api/ml/data.csv)")["msg"])
             except Exception as e:  # noqa: BLE001 - แสดงสาเหตุให้ผู้ใช้
-                print("ดาวน์โหลดไม่ได้:", e)
+                print("   ดึงข้อมูลไม่ได้:", e)
         elif k == "h":
             print(HELP)
         elif k in ("x", "\x1b", "\x03"):
             raise KeyboardInterrupt
 
     def status(self):
+        """พิมพ์สถานะ 1 บรรทัด: ชีพจร, GSR, อุณหภูมิ, สถานะนาฬิกา, จำนวนข้อที่เก็บแล้ว"""
         v = self.live
         c = self.rec.counts
         hr = f"{v['hr']:.0f}" if v.get("hr") is not None and v.get("con") else "--"
@@ -295,14 +312,17 @@ class Collector:
                 self.cmd(q.get())
 
     def close(self):
+        """จบรอบ: ปิดไฟล์ แล้วบอกว่าบันทึกไว้ที่ไหน / ไม่มีไฟล์ใหม่ถ้ายังไม่ได้ถาม"""
         self.rec.close()
         if self.rec.files_created:
-            print(f"บันทึกครบแล้วในโฟลเดอร์ data/  (รอบ {self.rec.run_id})")
+            print(f"บันทึกครบแล้ว: data/{os.path.basename(self.rec.paths['results'])}  (รอบ {self.rec.run_id})")
+            print("ขั้นต่อไป: ดับเบิลคลิก train_ai.bat เพื่อเทรน AI จากไฟล์ result_*.csv ทั้งหมด")
         else:
             print("ยังไม่ได้ถามสักข้อ — ไม่ได้สร้างไฟล์ใหม่")
 
 
 def main(argv=None) -> int:
+    """จุดเริ่มของ collect_data.bat: ถามชื่อ/โหมด -> แปลงไฟล์เก่า (ถ้ามี) -> วนรับปุ่มจนกด x"""
     try:
         sys.stdout.reconfigure(errors="replace")
     except (AttributeError, ValueError):
@@ -329,6 +349,7 @@ def main(argv=None) -> int:
         a.host, a.udp, a.http = "127.0.0.1", 4211, "127.0.0.1:8081"
     else:
         a.http = a.host
+    df.migrate(DATA, log=lambda s: print("[แปลงไฟล์เก่า] " + s))   # แปลงไฟล์รูปแบบเก่า (ถ้ามี) ก่อนเริ่ม
     c = Collector(a)
     print(f"ผู้ตอบ: {c.rec.subject} | ผู้ถาม: {c.rec.operator} | โหมด: {c.rec.mode} | นาฬิกา: {a.host}")
     try:

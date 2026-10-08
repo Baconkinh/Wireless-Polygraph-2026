@@ -25,14 +25,20 @@ def clean(x: Any) -> Any:
 
 
 class _Client:
+    """หน้าเว็บ 1 แท็บที่ต่อ WebSocket อยู่ + คิวข้อความของแท็บนั้น (แท็บที่ช้าไม่ทำให้แท็บอื่นช้าตาม)"""
     def __init__(self, ws: WebSocket):
+        """เก็บ WebSocket + คิวขนาด 300 ข้อความ (เต็มแล้วทิ้งข้อความเก่าสุด)"""
         self.ws = ws
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=300)
         self.task: asyncio.Task | None = None
 
 
 class Hub:
+    """ศูนย์กระจายข้อมูลสดไปทุกหน้าเว็บที่เปิดอยู่ (WebSocket /ws)
+    backend ส่วนอื่นเรียก hub.publish(ชนิด, ข้อมูล) แล้วทุกแท็บได้รับเหมือนกัน
+    """
     def __init__(self):
+        """เริ่มต้นแบบยังไม่มีหน้าเว็บต่อ"""
         self.clients: Set[_Client] = set()
 
     async def serve(self, ws: WebSocket, hello: Dict[str, Any]):
@@ -53,6 +59,7 @@ class Hub:
                 c.task.cancel()
 
     async def _sender(self, c: _Client):
+        """ส่งข้อความในคิวออกไปทีละข้อความ (1 task ต่อ 1 แท็บ) จนกว่าการเชื่อมต่อจะหลุด"""
         try:
             while True:
                 msg = await c.queue.get()
@@ -61,6 +68,7 @@ class Hub:
             pass
 
     def publish(self, typ: str, data: Any):
+        """กระจายข้อความ {type, data} ไปทุกแท็บ — ไม่มีแท็บเปิดอยู่ = ไม่ทำอะไร (ประหยัด CPU)"""
         if not self.clients:
             return
         # JSON มาตรฐานไม่มี NaN (JSON.parse ของเบราว์เซอร์จะ error) -> แปลงเป็น null ก่อน
@@ -77,4 +85,5 @@ class Hub:
 
     @property
     def count(self) -> int:
+        """จำนวนแท็บที่ต่ออยู่ (แสดงใน /api/status)"""
         return len(self.clients)

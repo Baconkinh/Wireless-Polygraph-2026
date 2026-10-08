@@ -89,19 +89,19 @@ CREATE TABLE IF NOT EXISTS events(          -- เหตุการณ์ใน
 );
 CREATE TABLE IF NOT EXISTS training_runs(   -- รอบการเก็บข้อมูลเทรน AI
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id TEXT UNIQUE,                       -- ตรงกับชื่อไฟล์ signals_<run_id>.csv
+  run_id TEXT UNIQUE,                       -- ตรงกับชื่อไฟล์ result_<run_id>.csv
   started REAL, ended REAL,
-  subject TEXT, operator TEXT, mode TEXT,   -- mode: fix / manual
+  subject TEXT, operator TEXT, mode TEXT,   -- mode: fix / manual / live
   signals_file TEXT, results_file TEXT
 );
 CREATE TABLE IF NOT EXISTS training_questions(  -- 1 แถว/ข้อ ในรอบเก็บข้อมูล
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT, question_no INTEGER, watch_qid INTEGER,
-  mode TEXT,                                -- fix / manual
+  mode TEXT,                                -- fix / manual / live
   label TEXT,                               -- เฉลย: truth / lie / unknown / aborted
   verdict TEXT, p_lie REAL, decided_by INTEGER, quality INTEGER,
-  used_for_training INTEGER,                -- 1 = ถูกเขียนลง training_samples.csv
-  data TEXT, created REAL
+  used_for_training INTEGER,                -- 1 = แถวนี้ใน result_<run_id>.csv ใช้เทรนได้
+  data TEXT, created REAL                   -- data = ผลจากนาฬิกา (JSON) + feedback + question_text
 );
 """
 
@@ -142,7 +142,9 @@ ORDER BY t.id;
 
 
 class Store:
+    """ฐานข้อมูล SQLite ของ Studio (data/studio.db) — โครงสร้างตารางอยู่ใน SCHEMA ด้านบน"""
     def __init__(self, path: str):
+        """เปิด/สร้างฐานข้อมูล, เปิดโหมด WAL (อ่านขณะเขียนได้), สร้างตาราง/view และอัปเกรดโครงสร้างเก่า"""
         self.path = path
         # check_same_thread=False + lock: ใช้จาก event loop และ thread ของ export ได้ปลอดภัย
         self.db = sqlite3.connect(path, check_same_thread=False)
@@ -179,6 +181,7 @@ class Store:
             return self.db.execute(sql, args).fetchall()
 
     def _x(self, sql: str, args: tuple = ()) -> int:
+        """รัน SQL ที่เขียนข้อมูล 1 คำสั่ง + commit (ถือ lock กันชนกันระหว่าง thread) คืน id แถวล่าสุด"""
         with self.lock:
             cur = self.db.execute(sql, args)
             self.db.commit()
@@ -191,10 +194,12 @@ class Store:
                        (time.time(), subject, operator, notes, template, device, fw))
 
     def end_session(self, sid: int):
+        """บันทึกเวลาจบเซสชัน (เขียนค่าสดที่ค้างในหน่วยความจำลงก่อน)"""
         self.flush_samples()
         self._x("UPDATE sessions SET ended=? WHERE id=? AND ended IS NULL", (time.time(), sid))
 
     def delete_session(self, sid: int):
+        """ลบเซสชันและทุกอย่างที่ผูกอยู่ (ค่าสด เหตุการณ์ ผล คำถาม)"""
         with self.lock:
             self.db.execute("DELETE FROM samples WHERE session_id=?", (sid,))
             self.db.execute("DELETE FROM events WHERE session_id=?", (sid,))
@@ -204,6 +209,7 @@ class Store:
             self.db.commit()
 
     def list_sessions(self) -> List[Dict[str, Any]]:
+        """รายการเซสชันทั้งหมด พร้อมจำนวนคำถาม/ผล (หน้า "ผลลัพธ์ & รายงาน")"""
         rows = self._q("""
           SELECT s.*,
             (SELECT COUNT(*) FROM questions q WHERE q.session_id=s.id) AS n_questions,
@@ -214,6 +220,7 @@ class Store:
         return [dict(r) for r in rows]
 
     def get_session(self, sid: int) -> Optional[Dict[str, Any]]:
+        """ข้อมูลเซสชัน 1 อัน + คำถาม + ผล (ใช้สร้างหน้าเว็บและรายงาน)"""
         rows = self._q("SELECT * FROM sessions WHERE id=?", (sid,))
         if not rows:
             return None
@@ -244,6 +251,7 @@ class Store:
             return cur.lastrowid
 
     def update_question(self, question_id: int, **fields):
+        """แก้ข้อความ/ชนิดของคำถาม (แก้ได้เฉพาะคอลัมน์ที่อนุญาต)"""
         allowed = {k: v for k, v in fields.items() if k in ("kind", "text", "hint", "grp", "label") and v is not None}
         if not allowed:
             return
@@ -251,13 +259,16 @@ class Store:
         self._x(f"UPDATE questions SET {sets} WHERE id=?", tuple(allowed.values()) + (question_id,))
 
     def delete_question(self, question_id: int):
+        """ลบคำถาม (เฉพาะข้อที่ยังไม่ได้ถาม)"""
         self._x("DELETE FROM questions WHERE id=? AND asked_at IS NULL", (question_id,))
 
     def get_question(self, question_id: int) -> Optional[Dict[str, Any]]:
+        """คำถาม 1 ข้อตาม id"""
         rows = self._q("SELECT * FROM questions WHERE id=?", (question_id,))
         return dict(rows[0]) if rows else None
 
     def mark_asked(self, question_id: int, t: float):
+        """บันทึกว่าเริ่มถามข้อนี้แล้ว (ถามซ้ำได้: ผลเก่าถูกแยกออกจากคำถาม)"""
         with self.lock:
             # ถามข้อเดิมซ้ำ (เช่นครั้งก่อนวัดไม่ได้) -> ผลเก่ายังเก็บไว้แต่ไม่ผูกกับคำถามแล้ว
             self.db.execute("UPDATE results SET question_id=NULL WHERE question_id=?", (question_id,))
@@ -266,9 +277,11 @@ class Store:
             self.db.commit()
 
     def set_question_qid(self, question_id: int, qid: int):
+        """ผูกคำถามกับเลข qid ที่ส่งให้นาฬิกา (ใช้จับคู่ผลที่ส่งกลับมา)"""
         self._x("UPDATE questions SET qid=? WHERE id=?", (qid, question_id))
 
     def mark_answer(self, question_id: int, answer: str, t: float):
+        """บันทึกคำตอบ ใช่/ไม่ใช่ และเวลาที่ตอบ"""
         self._x("UPDATE questions SET answer=?, answered_at=? WHERE id=?", (answer, t, question_id))
 
     def find_question_for_result(self, sid: int, qid: int) -> Optional[Dict[str, Any]]:
@@ -293,12 +306,14 @@ class Store:
             return None   # ได้ผลนี้มาแล้ว (UDP event + HTTP sync ซ้ำกัน)
 
     def update_result_data(self, sid: Optional[int], device_boot: str, seq: int, r: Dict[str, Any]):
+        """ผลข้อเดิมได้ข้อมูลครบกว่า (จาก /api/lie) -> อัปเดตแทนข้อมูลจาก UDP event"""
         self._x("""UPDATE results SET data=?, verdict=?, p=?, score=?, quality=?, reasons=?, ok=?
                    WHERE session_id IS ? AND device_boot=? AND seq=?""",
                 (json.dumps(r, ensure_ascii=False), r.get("verdict"), r.get("p"), r.get("score"),
                  r.get("quality"), r.get("reasons"), r.get("ok"), sid, device_boot, seq))
 
     def has_result(self, sid: Optional[int], device_boot: str, seq: int) -> bool:
+        """เคยบันทึกผลนี้แล้วหรือยัง (ดูจาก boot + seq) — กันบันทึกซ้ำ"""
         rows = self._q("SELECT 1 FROM results WHERE session_id IS ? AND device_boot=? AND seq=?", (sid, device_boot, seq))
         return bool(rows)
 
@@ -313,6 +328,7 @@ class Store:
                                       v.get("vb")))
 
     def flush_samples(self):
+        """เขียนค่าสดที่พักไว้ในหน่วยความจำลงฐานข้อมูลทีเดียว (เร็วกว่าเขียนทีละแถว 5 ครั้ง/วินาที)"""
         if not self._pending_samples:
             return
         rows, self._pending_samples = self._pending_samples, []
@@ -340,15 +356,18 @@ class Store:
                 "VALUES(?,?,?,?,?,?,?)", (run_id, time.time(), subject, operator, mode, signals, results))
 
     def end_training_run(self, run_id: str):
+        """บันทึกเวลาจบรอบเก็บข้อมูล/ใช้งานจริง"""
         self._x("UPDATE training_runs SET ended=? WHERE run_id=?", (time.time(), run_id))
 
     def add_training_question(self, run_id: str, e: Dict[str, Any]):
+        """บันทึกผล 1 ข้อของรอบเก็บข้อมูล/ใช้งานจริงลงตาราง training_questions (สำเนาของแถวใน result_*.csv)"""
         r = e.get("result") or {}
         self._x("""INSERT INTO training_questions(run_id,question_no,watch_qid,mode,label,verdict,p_lie,decided_by,
                    quality,used_for_training,data,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (run_id, e.get("question_no"), e.get("watch_qid"), e.get("mode"), e.get("label"), e.get("verdict"),
                  e.get("p"), r.get("src"), r.get("quality"), 1 if e.get("used") else 0,
-                 json.dumps(r, ensure_ascii=False), time.time()))
+                 json.dumps(dict(r, feedback=e.get("feedback", ""), question_text=e.get("text", "")),
+                            ensure_ascii=False), time.time()))
 
     # ------------------------------------------------------------ export
     def export_results_csv(self, sid: int) -> str:

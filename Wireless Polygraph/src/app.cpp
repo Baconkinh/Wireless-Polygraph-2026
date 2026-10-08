@@ -33,6 +33,7 @@ static EngineSnap s_snap;
 static volatile uint32_t s_eventId = 0;
 static volatile uint32_t s_lastActivity = 0;
 
+// สร้าง mutex / queue / event group ทั้งหมดก่อนเริ่ม task (ต้องมีก่อนใครจะใช้)
 void createSyncObjects() {
   liveMutex = xSemaphoreCreateMutex();
   engineMutex = xSemaphoreCreateMutex();
@@ -44,6 +45,7 @@ void createSyncObjects() {
   events = xEventGroupCreate();
 }
 
+// sensorTask เขียนค่าสดล่าสุด (ล็อก liveMutex กัน task อื่นอ่านค่าครึ่ง ๆ กลาง ๆ)
 void setVitals(const Vitals& v) {
   if (!liveMutex) { s_live = v; return; }
   xSemaphoreTake(liveMutex, portMAX_DELAY);
@@ -51,6 +53,7 @@ void setVitals(const Vitals& v) {
   xSemaphoreGive(liveMutex);
 }
 
+// อ่านสำเนาค่าสดล่าสุด (เว็บ/telemetry/ui เรียก) — คืนเป็นสำเนา ไม่ต้องถือ mutex นาน
 Vitals getVitals() {
   Vitals v;
   if (!liveMutex) return s_live;
@@ -60,6 +63,7 @@ Vitals getVitals() {
   return v;
 }
 
+// engineTask เขียนสรุปสถานะ LieEngine (สถานะ, ความคืบหน้า, ผลล่าสุด) ให้ task อื่นอ่าน
 void setEngineSnap(const EngineSnap& s) {
   if (!liveMutex) { s_snap = s; return; }
   xSemaphoreTake(liveMutex, portMAX_DELAY);
@@ -67,6 +71,7 @@ void setEngineSnap(const EngineSnap& s) {
   xSemaphoreGive(liveMutex);
 }
 
+// อ่านสำเนาสรุปสถานะ LieEngine
 EngineSnap getEngineSnap() {
   EngineSnap s;
   if (!liveMutex) return s_snap;
@@ -76,6 +81,7 @@ EngineSnap getEngineSnap() {
   return s;
 }
 
+// จด log แบบ printf -> ส่งเข้า logQueue (supervisor เป็นคนเขียนลงแฟลช ไม่ให้ task อื่นรอแฟลชช้า)
 void logEvent(const char* type, const char* fmt, ...) {
   LogMsg m;
   strncpy(m.type, type, sizeof(m.type) - 1);
@@ -91,6 +97,7 @@ void logEvent(const char* type, const char* fmt, ...) {
 
 uint32_t nextEventId() { return ++s_eventId; }
 
+// ส่งเหตุการณ์ (JSON) เข้า eventQueue -> telemetryTask ส่งทาง UDP ให้คอม/มือถือ
 void pushEvent(const char* json) {
   if (!eventQueue) return;
   EventMsg m;

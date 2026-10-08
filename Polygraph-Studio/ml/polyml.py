@@ -1,5 +1,5 @@
 """
-polyml.py — แกนกลางของ AI ใช้ร่วมกันโดย train.py, collect.py และนาฬิกาจำลอง (tools/virtual_watch.py)
+polyml.py — แกนกลางของ AI ใช้ร่วมกันโดย train.py, datafiles.py, collect.py และนาฬิกาจำลอง (tools/virtual_watch.py)
 ใช้แต่ไลบรารีมาตรฐานของ Python — ไม่ต้อง pip install อะไรเพิ่ม
 
 โมเดล: Logistic Regression (มี L2 regularization)
@@ -22,7 +22,6 @@ polyml.py — แกนกลางของ AI ใช้ร่วมกัน�
 """
 from __future__ import annotations
 
-import csv
 import json
 import math
 import os
@@ -31,7 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 SIGNALS = ["gsr", "hr", "amp", "trm", "tmp"]          # ลำดับเดียวกับ lie::F_GSR..F_TMP
 FEATURES = ["z_" + s for s in SIGNALS] + ["d_" + s for s in SIGNALS] + ["gsr_ok", "ppg_ok"]
@@ -83,6 +82,7 @@ def clean_subject(s: str) -> str:
 # ============================================================ ข้อมูล
 class Dataset:
     def __init__(self):
+        """ชุดข้อมูลเทรน: X (feature), y (0 = จริง, 1 = โกหก), ชื่อผู้ตอบ (ใช้แบ่ง leave-one-subject-out)"""
         self.X: List[List[float]] = []
         self.y: List[int] = []
         self.subject: List[str] = []
@@ -92,14 +92,17 @@ class Dataset:
         self.duplicates = 0
 
     def __len__(self):
+        """จำนวนข้อในชุดข้อมูล"""
         return len(self.y)
 
     def counts(self) -> Tuple[int, int]:
+        """(จำนวนข้อตอบจริง, จำนวนข้อโกหก)"""
         n1 = sum(self.y)
         return len(self.y) - n1, n1
 
 
 def _f(v) -> Optional[float]:
+    """แปลงเป็นตัวเลข float — อ่านไม่ได้/NaN/อนันต์ = None"""
     try:
         x = float(v)
         return x if math.isfinite(x) else None
@@ -107,46 +110,8 @@ def _f(v) -> Optional[float]:
         return None
 
 
-def is_training_csv(path: str) -> bool:
-    try:
-        with open(path, encoding="utf-8-sig", newline="") as fh:
-            head = next(csv.reader(fh), [])
-        return all(k in head for k in ["label"] + FEATURES)
-    except (OSError, UnicodeDecodeError, StopIteration):
-        return False
-
-
-def load_training(paths: Iterable[str], features: Sequence[str] = FEATURES) -> Dataset:
-    """อ่านไฟล์ CSV ข้อมูลเทรน (จากนาฬิกาหรือจาก collect.py) แล้วรวมกัน ตัดแถวซ้ำ
-
-    แถวซ้ำเกิดได้เมื่อใช้ทั้ง collect.py และดาวน์โหลดจากนาฬิกา (ข้อเดียวกันอยู่สองไฟล์)
-    ทศนิยมสองแหล่งต่างกันเล็กน้อย (event UDP ปัด 2-3 ตำแหน่ง, ไฟล์ในนาฬิกา 3-4 ตำแหน่ง และการปัดซ้ำ
-    เช่น 8.37499 -> 8.375 -> 8.38 เทียบกับ 8.37) จึงเทียบแบบมีค่าเผื่อ 0.011 แทนการเทียบตรงตัว
-    (ข้อที่ต่างกันจริงจะไม่ใกล้กันขนาดนี้ครบทั้ง 10 ค่าพร้อมกัน)
-    """
-    ds = Dataset()
-    kept: Dict[Tuple[int, str], List[List[float]]] = {}
-    for path in paths:
-        ds.files.append(path)
-        with open(path, encoding="utf-8-sig", newline="") as fh:
-            for r in csv.DictReader(fh):
-                lab = _f(r.get("label"))
-                xs = [_f(r.get(k)) for k in FEATURES]
-                if lab not in (0.0, 1.0) or any(v is None for v in xs):
-                    ds.skipped += 1
-                    continue
-                key = (int(lab), str(r.get("qid", "")).strip())
-                sig = xs[:10]
-                if any(all(abs(a - b) <= 0.011 for a, b in zip(sig, old)) for old in kept.get(key, [])):
-                    ds.duplicates += 1
-                    continue
-                kept.setdefault(key, []).append(sig)
-                full = dict(zip(FEATURES, xs))
-                ds.X.append([full[k] for k in features])
-                ds.y.append(int(lab))
-                ds.subject.append(clean_subject(r.get("subject", "")))
-                ds.p_model.append(_f(r.get("p_model")))
-    return ds
+# หมายเหตุ: การอ่านไฟล์ข้อมูลเทรนย้ายไปอยู่ที่ datafiles.py + train.build_dataset() แล้ว
+# (อ่านเฉพาะ data/result_*.csv รูปแบบเดียว) — ไฟล์นี้เหลือแต่ส่วนคณิตศาสตร์และการคุยกับนาฬิกา
 
 
 # ============================================================ คณิตศาสตร์
@@ -159,6 +124,7 @@ def sigmoid(z: float) -> float:
 
 
 def standardize_fit(X: List[List[float]]) -> Tuple[List[float], List[float]]:
+    """หาค่าเฉลี่ยและส่วนเบี่ยงเบนของแต่ละ feature (ไว้แปลงทุกค่าให้อยู่สเกลเดียวกันก่อนเทรน)"""
     n, d = len(X), len(X[0])
     mean = [sum(r[j] for r in X) / n for j in range(d)]
     scale = []
@@ -225,21 +191,26 @@ def fit_logreg(Z: List[List[float]], y: List[int], lam: float = 1.0, iters: int 
 
 
 class Model:
+    """โมเดล Logistic Regression ที่เทรนแล้ว: features, mean, scale, w, b (ค่าชุดเดียวกับที่ส่งเข้านาฬิกา)"""
     def __init__(self, features: Sequence[str], mean, scale, w, b, lam=1.0):
+        """สร้างจากค่าที่รู้แล้ว (ใช้ตอนอ่าน model.json หรือหลังเทรน)"""
         self.features, self.mean, self.scale, self.w, self.b, self.lam = list(features), list(mean), list(scale), list(w), float(b), lam
 
     @classmethod
     def fit(cls, X: List[List[float]], y: List[int], features: Sequence[str], lam: float = 1.0) -> "Model":
+        """เทรน: standardize ทุก feature แล้วหา w, b ด้วย Newton's method (fit_logreg)"""
         mean, scale = standardize_fit(X)
         Z = [[(v - m) / s for v, m, s in zip(r, mean, scale)] for r in X]
         b, w = fit_logreg(Z, y, lam)
         return cls(features, mean, scale, w, b, lam)
 
     def prob_row(self, row: Sequence[float]) -> float:
+        """p(โกหก) ของ 1 แถว = sigmoid(b + Σ w·(x − mean)/scale) — สูตรเดียวกับ ml::predict() ในนาฬิกา"""
         z = self.b + sum(w * (v - m) / s for w, v, m, s in zip(self.w, row, self.mean, self.scale))
         return sigmoid(z)
 
     def prob(self, x: Dict[str, float]) -> float:
+        """p(โกหก) จาก dict ชื่อ feature -> ค่า"""
         return self.prob_row([x[k] for k in self.features])
 
     # ---------------- ไฟล์ model.json ----------------
@@ -252,6 +223,7 @@ class Model:
 
     @classmethod
     def from_json(cls, d: dict) -> "Model":
+        """อ่านโมเดลจาก model.json พร้อมตรวจว่าใช้กับนาฬิกาได้ (รูปแบบ, จำนวนค่า, ชื่อ feature)"""
         if d.get("format") not in (None, MODEL_FORMAT):
             raise ValueError("ไม่รู้จักรูปแบบโมเดล " + str(d.get("format")))
         n = len(d["features"])
@@ -286,6 +258,7 @@ def cv_splits(ds: Dataset, k: int = 5) -> Tuple[str, List[List[int]]]:
 
 
 def metrics(y: List[int], p: List[float], thr: float = 0.5) -> dict:
+    """วัดผลการทำนาย: ความแม่นยำ (+ ช่วงเชื่อมั่น 95%), sensitivity, specificity, logloss, ตาราง confusion"""
     tp = sum(1 for a, b in zip(y, p) if a == 1 and b >= thr)
     fn = sum(1 for a, b in zip(y, p) if a == 1 and b < thr)
     tn = sum(1 for a, b in zip(y, p) if a == 0 and b < thr)
@@ -366,6 +339,7 @@ def _opener():
 
 
 def http_json(host: str, path: str, data: Optional[dict] = None, timeout: float = 5.0) -> dict:
+    """เรียก REST API ของนาฬิกา (GET หรือ POST แบบฟอร์ม) แล้วคืน JSON — ต่อไม่ติดก็คืน {ok: False} ไม่ล้ม"""
     url = f"http://{host}{path}"
     body = urllib.parse.urlencode(data).encode() if data is not None else None
     req = urllib.request.Request(url, data=body, method="POST" if data is not None else "GET",
@@ -383,10 +357,12 @@ def http_json(host: str, path: str, data: Optional[dict] = None, timeout: float 
 
 
 def http_post(host: str, path: str, timeout: float = 5.0) -> dict:
+    """POST เปล่า ๆ (ค่าอยู่ใน query string แล้ว)"""
     return http_json(host, path, data={}, timeout=timeout)
 
 
 def upload_model(host: str, model_json: dict) -> dict:
+    """ส่งโมเดล (model.json) เข้านาฬิกาที่ /api/ml/model — นาฬิกาตรวจแล้วเก็บลง NVS (อยู่ถาวรแม้ปิดเครื่อง)"""
     g = lambda v: "%.7g" % v   # noqa: E731  ความละเอียดพอสำหรับ float 32 บิตในนาฬิกา
     form = {"features": ",".join(model_json["features"]),
             "mean": ",".join(g(v) for v in model_json["mean"]),
@@ -399,6 +375,7 @@ def upload_model(host: str, model_json: dict) -> dict:
 
 
 def download_csv(host: str, out_path: str, timeout: float = 20.0) -> int:
+    """ดาวน์โหลดข้อมูลที่นาฬิกาบันทึกเอง (/api/ml/data.csv) ลงไฟล์ (คืนจำนวนไบต์)"""
     with _opener().open(f"http://{host}/api/ml/data.csv", timeout=timeout) as r:
         data = r.read()
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
@@ -408,4 +385,5 @@ def download_csv(host: str, out_path: str, timeout: float = 20.0) -> int:
 
 
 def now_epoch() -> int:
+    """เวลาปัจจุบันแบบ epoch (วินาที)"""
     return int(time.time())

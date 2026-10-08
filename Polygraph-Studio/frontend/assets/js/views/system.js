@@ -10,14 +10,18 @@ let root, timer = null, lastSys = null;
 const PART_COLOR = { nvs: '#5b8cff', otadata: '#7c5cff', app0: '#22d3a3', app1: '#12a594',
   spiffs: '#ffb84d', coredump: '#ff4d6d' };
 
+// สร้างหน้าระบบ & อุปกรณ์
 export function mount(el) {
   root = el;
   root.innerHTML = `<div id="sys-body"><p class="muted">กำลังโหลดข้อมูลระบบ...</p></div>`;
   on('device', refresh);
 }
+// เข้าหน้านี้: โหลดข้อมูลระบบจากนาฬิกา + รีเฟรชทุก 3 วินาที
 export function show() { refresh(); timer = setInterval(refresh, 3000); }
+// ออกจากหน้านี้: หยุดรีเฟรช (ไม่ถามนาฬิกาโดยไม่จำเป็น)
 export function hide() { clearInterval(timer); timer = null; }
 
+// อ่าน /api/watch/system แล้ววาดใหม่ (ไม่ได้เชื่อมต่อ = แสดงคำแนะนำ)
 async function refresh() {
   if (!S.connected) {
     $('#sys-body', root).innerHTML = `<div class="banner danger"><svg class=i><use href=#i-wifi></use></svg> ยังไม่ได้เชื่อมต่อนาฬิกา — ต่อ WiFi <b>Polygraph-Watch</b> ก่อน</div>` + simControls();
@@ -30,6 +34,7 @@ async function refresh() {
   render(sys);
 }
 
+// วาดข้อมูลระบบ: บูต/watchdog, หน่วยความจำ, แผนที่แฟลช, FreeRTOS task, พลังงาน, OTA
 function render(sys) {
   const info = (S.device && S.device.info) || {};
   const boot = info.boot || {};
@@ -193,6 +198,7 @@ function simControls() {
   </div>`;
 }
 
+// ผูกปุ่มควบคุมนาฬิกาจำลอง (ใช้ได้เฉพาะตอนต่อนาฬิกาจำลอง)
 function bindSim() {
   root.querySelectorAll('[data-sim]').forEach((b) => b.addEventListener('click', async () => {
     const a = b.dataset.sim;
@@ -233,6 +239,7 @@ function bindActions() {
   bindOta();
 }
 
+// โหลดค่าตั้ง LieEngine มาแสดงเป็นฟอร์มแก้ไข
 async function loadConfig() {
   const c = await get('/api/watch/config', { quiet: true }).catch(() => null);
   if (!c || c.ok === false) { toast('โหลดค่าตั้งไม่ได้', 'err'); return; }
@@ -264,6 +271,7 @@ async function loadConfig() {
   });
 }
 
+// ผูกปุ่มอัปโหลดเฟิร์มแวร์ (OTA)
 function bindOta() {
   const go = $('#ota-go', root);
   if (!go) return;

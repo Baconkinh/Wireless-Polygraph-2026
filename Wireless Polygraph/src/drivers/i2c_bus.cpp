@@ -13,12 +13,14 @@ namespace i2cbus {
 
 static uint32_t s_recoveries = 0;
 
+// เปิดบัส I2C (SDA = GPIO6, SCL = GPIO7, 400 kHz) พร้อม timeout กันค้าง
 bool begin() {
   bool ok = Wire.begin((int)PIN_SDA, (int)PIN_SCL, I2C_FREQ_HZ);
   Wire.setTimeOut(I2C_TIMEOUT_MS);
   return ok;
 }
 
+// กู้บัส I2C ที่ค้าง (ชิปดึง SDA ต่ำค้าง): ส่ง clock 9 ลูก + STOP แล้วเปิดบัสใหม่
 bool recover() {
   s_recoveries++;
   Wire.end();
@@ -46,11 +48,13 @@ bool recover() {
   return begin();
 }
 
+// มีชิปตอบที่ address นี้ไหม
 bool probe(uint8_t addr) {
   Wire.beginTransmission(addr);
   return Wire.endTransmission() == 0;
 }
 
+// หาทุกชิปบนบัส (คำสั่ง i2c ใน Serial)
 int scan(uint8_t* found, int maxN) {
   int n = 0;
   for (uint8_t a = 0x08; a < 0x78; a++) {

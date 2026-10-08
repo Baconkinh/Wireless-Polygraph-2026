@@ -15,6 +15,7 @@ import * as session from './session.js';
 let root, updCharts = () => {}, quickNo = 0;
 const SRC_TH = ['สูตรมาตรฐาน', 'สูตรปรับจากข้อควบคุม', 'โมเดล AI'];
 
+// สร้างหน้าหลัก: ค่าสด + กราฟ, ซ้าย = ทดสอบแบบเซสชัน, ขวา = ควบคุมด่วน/พลังงาน/ผู้จัดทำ
 export function mount(el) {
   root = el;
   root.innerHTML = `
@@ -99,7 +100,9 @@ export function mount(el) {
   paintCredits();
 }
 
+// กลับมาที่หน้านี้: วาดค่าล่าสุด
 export function show() { session.show(); paintLive(); paintResult(); }
+// ออกจากหน้านี้
 export function hide() {}
 
 // ---------------------------------------------------------------- ค่าสด + สถานะ + ปุ่ม

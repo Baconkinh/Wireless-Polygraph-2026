@@ -34,6 +34,7 @@ uint8_t s_clicks = 0, s_holdLevel = 0;
 uint32_t s_presses = 0;
 uint16_t s_buttonQid = 900;    // คำถามที่เริ่มจากปุ่มบนนาฬิกาใช้เลข 900+
 
+// ตั้งความสว่าง LED (PWM) — กลับขั้วให้ถ้า LED ติดเมื่อขาเป็น LOW
 void ledWrite(uint8_t duty) {
   const uint8_t hw = LED_ACTIVE_LOW ? (uint8_t)(255 - duty) : duty;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -43,6 +44,7 @@ void ledWrite(uint8_t duty) {
 #endif
 }
 
+// เลือกรูปแบบไฟ LED ตามสถานะ: ผลล่าสุด, กำลังวัด, จังหวะหัวใจ, แบตต่ำ, ไม่มี WiFi ...
 uint8_t computeLed(uint32_t now) {
   if (s_off) return 0;
   const uint32_t b = app::bits();
@@ -100,6 +102,7 @@ uint8_t computeLed(uint32_t now) {
   return (now % 2000) < 60 ? full : 0;           // รอ: ติดสั้น ๆ ทุก 2 วินาที (มองเห็นชัด = เฟิร์มแวร์ยังทำงาน)
 }
 
+// กดปุ่ม 1 ครั้งทำอะไร (ตามสถานะ engine): ยังไม่มี baseline = เริ่มวัด, พร้อม = เริ่มถาม (qid 900+), กำลังถาม = บันทึกว่าตอบแล้ว
 const char* buttonAction() {
   const char* act = "none";
   xSemaphoreTake(app::engineMutex, portMAX_DELAY);
@@ -118,6 +121,7 @@ const char* buttonAction() {
   return act;
 }
 
+// แจ้งคอม/มือถือว่ามีการกดปุ่ม (event button)
 void sendButtonEvent(const char* gesture, const char* act) {
   char js[128];
   snprintf(js, sizeof(js), "{\"t\":\"e\",\"eid\":%lu,\"ev\":\"button\",\"g\":\"%s\",\"act\":\"%s\"}",
@@ -126,6 +130,7 @@ void sendButtonEvent(const char* gesture, const char* act) {
   app::logEvent("BUTTON", "%s -> %s", gesture, act);
 }
 
+// จัดการการกดสั้น: 1 ครั้ง = ทำตามสถานะ, 2 ครั้ง = สลับโหมดเก็บข้อมูล/ใช้งานจริง, 3 ครั้ง = กระพริบบอกระดับแบต
 void handleClicks(uint8_t n) {
   app::touchActivity();
   if (n == 1) {
@@ -144,6 +149,7 @@ void handleClicks(uint8_t n) {
   }
 }
 
+// จัดการการกดค้าง: 2 วินาที = วัด baseline ใหม่, 5 วินาที = light sleep, 10 วินาที = standby (deep sleep)
 void handleHold(uint8_t level) {
   app::touchActivity();
   if (level == 1) {
@@ -161,6 +167,7 @@ void handleHold(uint8_t level) {
   }
 }
 
+// อ่านปุ่ม BOOT แบบกันเด้ง (debounce) แล้วแยกเป็นกดสั้น/กดค้าง
 void pollButton(uint32_t now) {
   const bool raw = digitalRead(PIN_BUTTON) == LOW;   // กด = LOW (ปุ่มต่อลง GND)
   if (raw != s_raw) {
@@ -211,6 +218,7 @@ void begin() {
   ledWrite(0);
 }
 
+// uiTask (priority 2): อัปเดต LED ทุก 20 ms (เร็วขึ้นเมื่อมีจังหวะหัวใจ) + อ่านปุ่ม
 void task(void*) {
   wdt::subscribe();
   for (;;) {
@@ -227,6 +235,7 @@ void task(void*) {
   }
 }
 
+// กระพริบ LED จำนวน times ครั้ง (ใช้ตอนบูตบอกสถานะ และบอกระดับแบต/โหมด)
 void bootBlink(uint8_t times) {
   for (uint8_t i = 0; i < times; i++) {
     ledWrite(255);
@@ -236,6 +245,7 @@ void bootBlink(uint8_t times) {
   }
 }
 
+// LED บอกผลการเปิด WiFi: ติดยาว 0.6 วินาที = สำเร็จ, กระพริบเร็ว 10 ครั้ง = ไม่สำเร็จ
 void wifiSignal(bool ok) {
   if (ok) {
     ledWrite(255);
@@ -251,6 +261,7 @@ void wifiSignal(bool ok) {
   }
 }
 
+// จำผลล่าสุดไว้แสดงด้วย LED 3 วินาที
 void showVerdict(lie::Verdict v) {
   s_verdictAt = millis();
   s_verdict = (uint8_t)v;
@@ -258,6 +269,7 @@ void showVerdict(lie::Verdict v) {
 
 void blink(uint8_t times) { s_blinkReq = times; }
 
+// ปิด LED (ก่อนหลับ)
 void ledOff() {
   s_off = true;
   ledWrite(0);
