@@ -1,0 +1,6 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-08 23:08:09.987,20261008_230717,studio,เทส,เทส1,1,600,live,,truth,inconclusive,inconclusive,0.488,ai_model,66,1,30,0,1,1,0,-5.73,0.068,0,0.014,0,-2.08,-2.26,0.06,-0.22,
+2026-10-08 23:08:36.863,20261008_230717,studio,เทส,เทส1,2,601,live,,lie,inconclusive,inconclusive,0.4,ai_model,68,1,30,0,1,1,0,17.14,0.682,-0.003,0.025,0,-1.26,7.42,-0.06,0.14,
+2026-10-08 23:09:25.643,20261008_230717,studio,เทส,เทส1,3,602,live,,unknown,unknown,invalid,0.885,ai_model,70,3,24,0,0,0,0,0,0,-0.0001,0.1031,0,0,0,0.07,2.75,
+2026-10-08 23:09:55.968,20261008_230717,studio,เทส,เทส1,4,603,live,,lie,inconclusive,inconclusive,0.629,ai_model,70,1,30,0,1,1,0,-3.2857,0.4256,0.0001,0.104,0,-2,3.37,0.08,2.78,
+2026-10-08 23:10:47.888,20261008_230717,studio,เทส,เทส1,5,604,live,,lie,inconclusive,inconclusive,0.415,ai_model,60,1,30,0,1,1,0,0.28,0.719,-0.01,0.036,0,-1.87,7.99,-0.44,0.52,

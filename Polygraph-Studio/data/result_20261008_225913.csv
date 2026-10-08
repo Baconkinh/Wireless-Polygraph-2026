@@ -1,0 +1,3 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-08 23:02:25.197,20261008_225913,studio,gg,gg,1,600,live,อายุ22ใช่ไหม,truth,wrong,lie,0.707,ai_model,67,1,30,0,1,1,0,31.01,0.182,0.011,0.031,0,20.75,-0.89,0.19,1.44,
+2026-10-08 23:03:39.371,20261008_225913,studio,gg,gg,2,601,live,,truth,wrong,lie,0.84,ai_model,68,1,30,0,1,1,0,65.75,-0.185,-0.012,0.045,0,43.9,-4.56,-0.92,1.89,

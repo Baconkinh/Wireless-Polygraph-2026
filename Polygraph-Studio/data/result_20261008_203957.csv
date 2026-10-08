@@ -1,0 +1,2 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-08 20:41:48.631,20261008_203957,studio,เทส,เทส1,1,600,live,ตอนนี้ฟังเพลงbalckpinkใช่ไหม,truth,wrong,lie,0.672,ai_model,93,0,31,1,1,1,0.0026,66.8,0.509,-0.067,-0.005,-0.11,4.13,2.42,-3.49,1.07,
