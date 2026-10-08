@@ -20,12 +20,22 @@ from pydantic import BaseModel
 
 from . import config as cfgmod
 from . import report
+from .collector import Collector
 from .hub import Hub
 from .sessions import FEATURES, KIND_TH, TEMPLATES, VERDICT_TH, Interrogation
 from .store import Store
 from .watch_link import WatchError, WatchLink
 
-STUDIO_VERSION = "2.0.0"
+STUDIO_VERSION = "2.2.0"
+
+# ผู้จัดทำ (แสดงในหน้าเว็บ/รายงาน)
+CREDITS = {
+    "project": "Wireless Polygraph — เครื่องจับเท็จไร้สาย",
+    "course": "03603323 Introduction to Embedded Systems (และ 03603324 Embedded System Laboratory)",
+    "org": "ภาควิชาวิศวกรรมคอมพิวเตอร์ คณะวิศวกรรมศาสตร์ ศรีราชา มหาวิทยาลัยเกษตรศาสตร์",
+    "year": "ภาคต้น ปีการศึกษา 2569",
+    "members": [{"name": "อัจฉรา ดังดี", "id": "6730300655"}, {"name": "ปภากร จันทร์ดี", "id": "6730300809"}],
+}
 
 
 # ---------------------------------------------------------------- request bodies
@@ -64,6 +74,24 @@ class ConfigIn(BaseModel):
     values: Dict[str, Any]
 
 
+class CollectStart(BaseModel):
+    subject: str = ""
+    operator: str = ""
+    mode: str = "fix"            # fix = บอกเฉลยก่อนถาม, manual = ถามก่อนแล้วผู้ตอบบอกเฉลยทีหลัง
+
+
+class CollectAsk(BaseModel):
+    label: Optional[str] = None  # โหมด fix: "truth" / "lie"
+
+
+class CollectLabel(BaseModel):
+    label: str                   # "truth" / "lie" / "unknown"
+
+
+class CollectMode(BaseModel):
+    mode: str
+
+
 def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
     s = settings or cfgmod.load([])
     store = Store(s.db_path)
@@ -71,11 +99,15 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
     inter = Interrogation(store, hub)
     link = WatchLink(s, inter)
     inter.link = link
+    collector = Collector(store, hub)        # หน้าเก็บข้อมูลเทรน AI
+    collector.link = link
+    inter.collector = collector
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await link.start()
         yield
+        collector.stop()                     # ปิดไฟล์ CSV ให้เรียบร้อยตอนปิดโปรแกรม
         store.flush_samples()
         await link.stop()
 
@@ -90,6 +122,7 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
         return {
             "version": STUDIO_VERSION, "status": link.status(), "live": link.live, "lie": link.lie,
             "device": {"hi": link.device, "info": link.info}, "session": inter.session_view(),
+            "collect": collector.state(), "credits": CREDITS,
             "meta": {"features": [{"key": f[0], "name": f[1], "unit": f[2], "why": f[4]} for f in FEATURES],
                      "verdict_th": VERDICT_TH, "kind_th": KIND_TH},
         }
@@ -185,6 +218,10 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
             "demo": ("/api/demo", {"type": p.get("type"), "confirm": p.get("confirm")}),
             "stats_reset": ("/api/stats/reset", {}),
             "logs_clear": ("/api/logs/clear", {}),
+            # v2.1: ตั้งค่าแบบเดียวกับหน้าเว็บในนาฬิกา
+            "sleep": ("/api/sleep", {"auto": p.get("auto"), "now": p.get("now"), "sec": p.get("sec")}),
+            "wifi": ("/api/wifi", {"level": p.get("level")}),
+            "ml_mode": ("/api/ml/mode", {"mode": p.get("mode")}),
         }
         if cmd.action not in routes:
             return JSONResponse({"ok": False, "error": "BAD_ACTION", "msg": f"ไม่รู้จักคำสั่ง {cmd.action}"}, 400)
@@ -196,6 +233,49 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
         if res.get("ok"):
             store.add_event(inter.active, f"cmd_{cmd.action}", p)
         return res
+
+    @app.get("/api/watch/ml", tags=["watch"])
+    async def watch_ml():
+        try:
+            return await link.get("/api/ml")
+        except WatchError as e:
+            return watch_error(e)
+
+    # ------------------------------------------------------------ หน้าเก็บข้อมูลเทรน AI
+    @app.get("/api/collect", tags=["collect"])
+    async def collect_state():
+        return collector.state()
+
+    @app.post("/api/collect/start", tags=["collect"])
+    async def collect_start(body: CollectStart):
+        return collector.start(body.subject.strip(), body.operator.strip(), body.mode)
+
+    @app.post("/api/collect/ask", tags=["collect"])
+    async def collect_ask(body: CollectAsk):
+        try:
+            return await collector.ask(body.label)
+        except WatchError as e:
+            return watch_error(e)
+
+    @app.post("/api/collect/label", tags=["collect"])
+    async def collect_label(body: CollectLabel):
+        return collector.label(body.label)
+
+    @app.post("/api/collect/abort", tags=["collect"])
+    async def collect_abort():
+        return await collector.abort()
+
+    @app.post("/api/collect/mode", tags=["collect"])
+    async def collect_mode(body: CollectMode):
+        return collector.set_mode(body.mode)
+
+    @app.post("/api/collect/stop", tags=["collect"])
+    async def collect_stop():
+        return collector.stop()
+
+    @app.get("/api/credits", tags=["status"])
+    async def credits():
+        return CREDITS
 
     @app.post("/api/watch/ota", tags=["watch"])
     async def watch_ota(file: UploadFile = File(...)):
@@ -323,11 +403,21 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
             v["samples"] = store.get_samples(sid, 10 ** 9)
         return JSONResponse(v, headers={"Content-Disposition": f'attachment; filename="session{sid}.json"'})
 
+    @app.get("/report-data-dictionary", response_class=HTMLResponse, tags=["export"])
+    async def data_dictionary():
+        """ความหมายของทุกตาราง/คอลัมน์ในฐานข้อมูลและไฟล์ CSV (อ่านจาก DATA_DICTIONARY.md)"""
+        path = os.path.join(cfgmod.ROOT, "DATA_DICTIONARY.md")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return HTMLResponse(report.markdown_page("Data Dictionary", fh.read()))
+        except OSError:
+            return HTMLResponse("<p>ไม่พบไฟล์ DATA_DICTIONARY.md</p>", 404)
+
     @app.get("/report/{sid}", response_class=HTMLResponse, tags=["export"])
     async def report_page(sid: int):
         v = inter.session_view(sid)
         if not v:
             return HTMLResponse("<h1>ไม่พบเซสชัน</h1>", 404)
-        return HTMLResponse(report.render(v, store.get_samples(sid, 1500)))
+        return HTMLResponse(report.render(v, store.get_samples(sid, 1500), CREDITS))
 
     return app

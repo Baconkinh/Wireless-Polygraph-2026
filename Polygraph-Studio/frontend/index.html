@@ -43,24 +43,26 @@
   <aside class="sidebar">
     <div class="brand"><div class="logo"><svg class=i><use href=#i-logo></use></svg></div><div><b>Polygraph Studio</b><span>Wireless Lie Detector</span></div></div>
     <nav class="nav" id="nav">
-      <button data-view="session" class="active"><span class="ico"><svg class=i><use href=#i-clip></use></svg></span>ทดสอบ</button>
+      <button data-view="home" class="active"><span class="ico"><svg class=i><use href=#i-logo></use></svg></span>Wireless Polygraph</button>
+      <button data-view="collect"><span class="ico"><svg class=i><use href=#i-db></use></svg></span>เก็บข้อมูลเทรน AI</button>
       <button data-view="results"><span class="ico"><svg class=i><use href=#i-chart></use></svg></span>ผลลัพธ์ &amp; รายงาน</button>
       <button data-view="system"><span class="ico"><svg class=i><use href=#i-gear></use></svg></span>ระบบ &amp; อุปกรณ์</button>
       <button data-view="guide"><span class="ico"><svg class=i><use href=#i-book></use></svg></span>คู่มือ &amp; หลักการ</button>
-      <button id="link-watchpage" title="หน้าเว็บที่ฝังอยู่ในนาฬิกา: ค่าเซนเซอร์สด + กราฟ"><span class="ico"><svg class=i><use href=#i-logo></use></svg></span>ค่าสดบนนาฬิกา ↗</button>
+      <button id="link-watchpage" title="หน้าเว็บที่ฝังอยู่ในนาฬิกา: ค่าเซนเซอร์สด + กราฟ"><span class="ico"><svg class=i><use href=#i-wifi></use></svg></span>หน้าเว็บในนาฬิกา ↗</button>
     </nav>
     <div class="spacer"></div>
     <div class="side-card" id="side-device">
       <div class="row between"><b>นาฬิกา</b><span class="dot" id="side-dot"></span></div>
       <div class="muted" id="side-device-text">กำลังค้นหา...</div>
     </div>
+    <div class="side-card muted small" id="side-credits"></div>
     <div class="side-card muted">Studio <span id="studio-ver"></span> · <a href="/docs" target="_blank">API docs</a></div>
   </aside>
 
   <main>
     <!-- ======================= แถบบน ======================= -->
     <header class="topbar">
-      <h2 id="view-title">ทดสอบ</h2>
+      <h2 id="view-title">Wireless Polygraph</h2>
       <span class="pill" id="pill-conn"><span class="dot" id="conn-dot"></span><span id="conn-text">ไม่ได้เชื่อมต่อ</span></span>
       <span class="pill" id="pill-engine" title="สถานะ LieEngine บนนาฬิกา"><svg class=i><use href=#i-chip></use></svg> <span id="engine-text">-</span></span>
       <span class="pill" id="pill-batt" title="แบตเตอรี่"><svg class=i><use href=#i-batt></use></svg> <span id="batt-text">-</span></span>
@@ -68,7 +70,8 @@
       <button class="btn sm ghost" id="btn-theme" title="สลับโหมดสว่าง/มืด"><svg class=i><use href=#i-contrast></use></svg></button>
     </header>
 
-    <section class="view active" id="view-session"></section>
+    <section class="view active" id="view-home"></section>
+    <section class="view" id="view-collect"></section>
     <section class="view" id="view-results"></section>
     <section class="view" id="view-system"></section>
     <section class="view guide" id="view-guide"></section>
@@ -76,6 +79,8 @@
 </div>
 
 <div class="toasts" id="toasts"></div>
+<!-- Chart.js (ไฟล์ในเครื่อง ไม่ต้องใช้เน็ต) ต้องโหลดก่อน main.js เพราะกราฟเรียลไทม์ใช้ตัวแปร Chart -->
+<script src="/assets/vendor/chart.umd.min.js"></script>
 <script type="module" src="/assets/js/main.js"></script>
 </body>
 </html>

@@ -199,7 +199,9 @@ footer{text-align:center;color:var(--mut);font-size:12px;padding:4px 0 20px}a{co
 หลับลึก (deep sleep): ปิดเกือบทั้งหมด ตื่นเองเมื่อครบเวลาแล้วบูตใหม่ ต้องวัดค่าปกติใหม่</p>
 </section>
 
-<footer>FW <span id="fw">-</span> | <a href="/api/system" target="_blank">ข้อมูลระบบ (JSON)</a> | <a href="/update">อัปเดตเฟิร์มแวร์ (OTA)</a></footer>
+<footer>FW <span id="fw">-</span> | <a href="/api/system" target="_blank">ข้อมูลระบบ (JSON)</a> | <a href="/update">อัปเดตเฟิร์มแวร์ (OTA)</a><br>
+โครงงานรายวิชา 03603323 Introduction to Embedded Systems · ภาควิชาวิศวกรรมคอมพิวเตอร์ มก. ศรีราชา<br>
+ผู้จัดทำ: อัจฉรา ดังดี 6730300655 · ปภากร จันทร์ดี 6730300809</footer>
 </main>
 
 <script>

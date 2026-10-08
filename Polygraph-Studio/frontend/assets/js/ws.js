@@ -24,6 +24,7 @@ export function connectWS() {
         S.live = d.live && Object.keys(d.live).length ? d.live : null;
         S.lie = d.lie && Object.keys(d.lie).length ? d.lie : null;
         S.device = d.device || S.device; S.session = d.session; S.meta = d.meta;
+        S.collect = d.collect || null; S.credits = d.credits || null;
         emit('snapshot', d);
         break;
       case 'vitals': pushVitals(d); emit('vitals', d); break;
@@ -33,6 +34,7 @@ export function connectWS() {
       case 'session': S.session = d; emit('session', d); break;
       case 'result': S.lastResult = d; emit('result', d); break;
       case 'event': emit('event', d); break;
+      case 'collect': S.collect = d; emit('collect', d); break;
       case 'device': S.device = { hi: d.hi, info: d.info }; emit('device', d); break;
       default: break;
     }

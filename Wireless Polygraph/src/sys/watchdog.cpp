@@ -1,4 +1,11 @@
-// watchdog.cpp — ดูภาพรวมใน watchdog.h
+// =====================================================================
+//  watchdog.cpp — Watchdog 3 ชั้น + กล่องดำบอกสาเหตุการรีเซ็ต (ภาพรวมใน watchdog.h)
+//  ทำอะไร   : ชั้น 1 Task WDT 8 s (ทุก task ต้อง feed), ชั้น 2 Interrupt WDT (ของ ESP-IDF),
+//             ชั้น 3 hardware timer WDT 12 s ที่ supervisor ป้อนหลังตรวจ heartbeat ของทุก task,
+//             captureBootInfo() อ่านเหตุผลรีเซ็ต + กล่องดำ RTC_NOINIT + core dump, ฟังก์ชันสาธิต
+//  เรียกจาก : main.cpp, tasks.cpp (ทุก task), cli.cpp/web_server.cpp (สาธิต)
+//  วิชา     : Watchdog (kicking the dog), Timer interrupt
+// =====================================================================
 #include "watchdog.h"
 #include "esp_task_wdt.h"
 #include "esp_sleep.h"

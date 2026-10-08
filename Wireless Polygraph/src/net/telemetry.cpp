@@ -1,4 +1,11 @@
-// telemetry.cpp — ดูโปรโตคอลใน telemetry.h
+// =====================================================================
+//  telemetry.cpp — ส่งข้อมูลสดทาง UDP พอร์ต 4210 (ไม่ต้องรอ ACK = หน่วงต่ำ เหมาะกับกราฟสด)
+//  ทำอะไร   : รับ "hello" จากคอม (จำ IP/พอร์ตไว้ 10 วินาที) แล้วส่ง: ค่าสด 'v' 5 Hz, คลื่น PPG 'w', เหตุการณ์ 'e'
+//             (ผลการตัดสินส่งซ้ำ 2 รอบกันหาย), ตอบ ping ให้วัด latency, CSV แบบเก่าถ้าส่ง "hello" เฉย ๆ
+//  เรียกจาก : tasks.cpp telemetryTask  — อ่านจาก eventQueue/waveQueue
+//  ผู้รับ   : Polygraph-Studio/backend/watch_link.py, ml/collect.py, receive_data.py ของเพื่อน
+//  วิชา     : WiFi, UDP socket
+// =====================================================================
 #include "telemetry.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>

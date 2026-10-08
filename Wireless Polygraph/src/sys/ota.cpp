@@ -1,4 +1,10 @@
-// ota.cpp — ดูหลักการใน ota.h
+// =====================================================================
+//  ota.cpp — อัปเดตเฟิร์มแวร์ไร้สาย (หน้า /update และ espota) + rollback อัตโนมัติ
+//  ทำอะไร   : เขียนไฟล์ใหม่ลง app slot ที่ไม่ได้ใช้ -> รีบูต -> serviceVerify() ถ้าทำงานปกติครบ 20 วินาที
+//             จึง mark valid ไม่งั้น bootloader ย้อนกลับเวอร์ชันเดิม, scanSlots() อ่านเวอร์ชันในทั้งสอง slot
+//  เรียกจาก : web_server.cpp (ลงทะเบียน /update), tasks.cpp (supervisor ตรวจ verify)
+//  วิชา     : Memory (partition table, app0/app1, otadata)
+// =====================================================================
 #include "ota.h"
 #include <WebServer.h>
 #include <Update.h>

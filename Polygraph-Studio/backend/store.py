@@ -1,12 +1,21 @@
 """
-store.py — ฐานข้อมูล SQLite (ไฟล์เดียว data/studio.db ไม่ต้องติดตั้ง server)
+store.py — ฐานข้อมูล SQLite ของ Studio (ไฟล์เดียว data/studio.db ไม่ต้องติดตั้ง database server)
 
-ตาราง
-  sessions  : การสอบสวนแต่ละครั้ง (ชื่อผู้ถูกทดสอบ, ผู้คุม, เวลา, นาฬิกาที่ใช้)
-  questions : คำถามในเซสชัน (ข้อความ, ชนิด, เวลาที่ถาม/ตอบ, qid ที่ส่งให้นาฬิกา)
-  results   : ผลที่นาฬิกาคำนวณ (คำตัดสิน, P(โกหก), feature, z-score) — 1 ผลต่อ 1 คำถาม
-  samples   : ค่าสัญญาณ 5 ครั้ง/วินาทีระหว่างเซสชัน (ไว้วาดกราฟย้อนหลัง/รายงาน)
-  events    : เหตุการณ์ (เริ่ม baseline, นาฬิการีบูต, แบตต่ำ, กดปุ่ม ฯลฯ)
+ทำไมใช้ SQLite: เป็นไฟล์เดียว พกไปกับโปรเจกต์ได้ เปิดดูด้วย DBeaver / DB Browser for SQLite ได้ทันที
+และเป็น database จริง (มี SQL, index, transaction) เหมาะกับข้อมูลเซสชันที่ต้องค้น/สรุปทีหลัง
+
+ตาราง (ชื่อตาราง/คอลัมน์เป็นภาษาอังกฤษทั้งหมด — ความหมายละเอียดอยู่ใน DATA_DICTIONARY.md)
+  sessions            การทดสอบแต่ละครั้ง (ผู้ถูกทดสอบ, ผู้ถาม, เวลาเริ่ม/จบ, นาฬิกาที่ใช้)
+  questions           คำถามในเซสชัน (ข้อความ, ชนิด, เวลาที่ถาม/ตอบ, qid ที่ส่งให้นาฬิกา)
+  results             ผลที่นาฬิกาคำนวณ (คำตัดสิน, p_lie, feature, z-score) — 1 ผลต่อ 1 คำถาม
+  samples             ค่าสัญญาณ 5 ครั้ง/วินาทีระหว่างเซสชัน (+ ข้อที่กำลังถาม + ช่วง baseline/คำถาม)
+  events              เหตุการณ์ (เริ่ม baseline, นาฬิการีบูต, แบตต่ำ, กดปุ่ม ฯลฯ)
+  training_runs       รอบการเก็บข้อมูลเทรน AI จากหน้า "เก็บข้อมูลเทรน AI"
+  training_questions  1 แถว/ข้อในรอบเก็บข้อมูล (เฉลย, คำตัดสิน, feature)
+VIEW (ตารางสำเร็จรูปที่อ่านง่าย — เปิดใน DBeaver แล้วดูได้เลย เวลาแปลงเป็นวันที่แล้ว)
+  v_sessions_overview     สรุปทุกเซสชัน: จำนวนข้อ, โกหก/จริง
+  v_question_results      คำถาม + คำตอบ + ผลการตัดสิน เรียงตามลำดับข้อ
+  v_training_questions    ข้อมูลเทรนจากหน้าเก็บข้อมูล พร้อมชื่อผู้ถูกทดสอบ
 """
 from __future__ import annotations
 
@@ -18,43 +27,118 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+SCHEMA_VERSION = 2
+
+# หมายเหตุ: comment หลัง -- จะถูกเก็บไว้ในคำสั่ง CREATE ของ SQLite ด้วย -> เปิดแท็บ DDL ใน DBeaver จะเห็นคำอธิบาย
 SCHEMA = """
 PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS sessions(
+CREATE TABLE IF NOT EXISTS sessions(        -- การทดสอบ 1 ครั้ง
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created REAL NOT NULL, ended REAL,
-  subject TEXT, operator TEXT, notes TEXT, template TEXT,
-  device TEXT, fw TEXT
+  created REAL NOT NULL,                    -- เวลาเริ่ม (Unix epoch วินาที)
+  ended REAL,                               -- เวลาจบ (NULL = ยังเปิดอยู่)
+  subject TEXT,                             -- ชื่อผู้ถูกทดสอบ
+  operator TEXT,                            -- ชื่อผู้ถาม
+  notes TEXT, template TEXT,                -- หมายเหตุ / ชุดคำถามที่ใช้
+  device TEXT, fw TEXT                      -- รหัสนาฬิกา / เวอร์ชันเฟิร์มแวร์
 );
-CREATE TABLE IF NOT EXISTS questions(
+CREATE TABLE IF NOT EXISTS questions(       -- คำถามในเซสชัน
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  ord INTEGER NOT NULL, qid INTEGER NOT NULL,
-  kind TEXT NOT NULL, text TEXT NOT NULL, hint TEXT, grp TEXT, label TEXT,
-  asked_at REAL, answer TEXT, answered_at REAL
+  ord INTEGER NOT NULL,                     -- ลำดับข้อในเซสชัน (1, 2, 3 ...)
+  qid INTEGER NOT NULL,                     -- เลขข้อที่ส่งให้นาฬิกา (ผลที่ได้กลับมาจะมี qid นี้)
+  kind TEXT NOT NULL,                       -- test=คำถามจริง, truth/lie=คำถามควบคุม, warmup=อุ่นเครื่อง
+  text TEXT NOT NULL, hint TEXT,            -- ข้อความคำถาม / คำแนะนำผู้ถาม
+  grp TEXT, label TEXT,                     -- กลุ่มคำถาม (เช่น card = เกมทายเลขลับ) / ป้ายของข้อ
+  asked_at REAL,                            -- เวลาที่ถาม (epoch)
+  answer TEXT,                              -- คำตอบของผู้ถูกทดสอบ yes/no
+  answered_at REAL
 );
-CREATE TABLE IF NOT EXISTS results(
+CREATE TABLE IF NOT EXISTS results(         -- ผลการตัดสินจากนาฬิกา
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
   question_id INTEGER REFERENCES questions(id) ON DELETE SET NULL,
-  device_boot TEXT, seq INTEGER, qid INTEGER, kind TEXT,
-  verdict TEXT, p REAL, score REAL, quality INTEGER, reasons INTEGER, ok INTEGER,
-  data TEXT, received REAL,
+  device_boot TEXT, seq INTEGER,            -- "<นาฬิกา>#<รอบบูต>" + ลำดับผลในนาฬิกา (กันบันทึกซ้ำ)
+  qid INTEGER, kind TEXT,
+  verdict TEXT,                             -- lie / truth / inconclusive / invalid
+  p REAL,                                   -- โอกาสโกหก 0..1
+  score REAL, quality INTEGER,              -- คะแนนรวม / คุณภาพสัญญาณ 0..100
+  reasons INTEGER, ok INTEGER,              -- bit เหตุผล / bit สัญญาณที่ใช้ได้ (ดู DATA_DICTIONARY.md)
+  data TEXT,                                -- ผลเต็มรูปแบบ (JSON)
+  received REAL,
   UNIQUE(session_id, device_boot, seq)
 );
-CREATE TABLE IF NOT EXISTS samples(
-  session_id INTEGER NOT NULL, t REAL NOT NULL,
-  hr REAL, hrv REAL, gsr REAL, gp REAL, tmp REAL, trm REAL, mot REAL,
-  si INTEGER, es INTEGER, con INTEGER, gc INTEGER, vb REAL
+CREATE TABLE IF NOT EXISTS samples(         -- ค่าสัญญาณ 5 ครั้ง/วินาที
+  session_id INTEGER NOT NULL,
+  t REAL NOT NULL,                          -- เวลา (epoch วินาที)
+  question_id INTEGER,                      -- คำถามที่กำลังถามอยู่ (NULL = ไม่ได้ถาม)
+  phase TEXT,                               -- baseline / rest / question
+  heart_rate_bpm REAL, hrv_ms REAL,
+  gsr_us REAL, gsr_phasic_us REAL,
+  skin_temp_c REAL, tremor_ms2 REAL, motion_ms2 REAL,
+  stress_index INTEGER,                     -- ดัชนีความตื่นตัว 0..100
+  engine_state INTEGER,                     -- 0 idle, 1 baseline, 2 ready, 3 question
+  ppg_contact INTEGER, gsr_contact INTEGER, -- 1 = เซนเซอร์แตะผิว
+  battery_mv REAL
 );
 CREATE INDEX IF NOT EXISTS idx_samples ON samples(session_id, t);
-CREATE TABLE IF NOT EXISTS events(
+CREATE TABLE IF NOT EXISTS events(          -- เหตุการณ์ในระบบ
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER, t REAL NOT NULL, type TEXT NOT NULL, data TEXT
+  session_id INTEGER, t REAL NOT NULL,
+  type TEXT NOT NULL,                       -- เช่น ask, cmd_baseline, device_reboot, low_batt
+  data TEXT                                 -- รายละเอียด (JSON)
+);
+CREATE TABLE IF NOT EXISTS training_runs(   -- รอบการเก็บข้อมูลเทรน AI
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT UNIQUE,                       -- ตรงกับชื่อไฟล์ signals_<run_id>.csv
+  started REAL, ended REAL,
+  subject TEXT, operator TEXT, mode TEXT,   -- mode: fix / manual
+  signals_file TEXT, results_file TEXT
+);
+CREATE TABLE IF NOT EXISTS training_questions(  -- 1 แถว/ข้อ ในรอบเก็บข้อมูล
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT, question_no INTEGER, watch_qid INTEGER,
+  mode TEXT,                                -- fix / manual
+  label TEXT,                               -- เฉลย: truth / lie / unknown / aborted
+  verdict TEXT, p_lie REAL, decided_by INTEGER, quality INTEGER,
+  used_for_training INTEGER,                -- 1 = ถูกเขียนลง training_samples.csv
+  data TEXT, created REAL
 );
 """
 
-SAMPLE_COLS = ["t", "hr", "hrv", "gsr", "gp", "tmp", "trm", "mot", "si", "es", "con", "gc", "vb"]
+# ชื่อคอลัมน์ในฐานข้อมูล (อังกฤษเต็ม) <-> ชื่อสั้นที่หน้าเว็บ/รายงานใช้ (เหมือนชื่อใน JSON จากนาฬิกา)
+SAMPLE_MAP = [("t", "t"), ("heart_rate_bpm", "hr"), ("hrv_ms", "hrv"), ("gsr_us", "gsr"), ("gsr_phasic_us", "gp"),
+              ("skin_temp_c", "tmp"), ("tremor_ms2", "trm"), ("motion_ms2", "mot"), ("stress_index", "si"),
+              ("engine_state", "es"), ("ppg_contact", "con"), ("gsr_contact", "gc"), ("battery_mv", "vb")]
+SAMPLE_COLS = [k for _, k in SAMPLE_MAP]
+OLD_SAMPLE_NAMES = {"hr": "heart_rate_bpm", "hrv": "hrv_ms", "gsr": "gsr_us", "gp": "gsr_phasic_us",
+                    "tmp": "skin_temp_c", "trm": "tremor_ms2", "mot": "motion_ms2", "si": "stress_index",
+                    "es": "engine_state", "con": "ppg_contact", "gc": "gsr_contact", "vb": "battery_mv"}
+
+VIEWS = """
+CREATE VIEW IF NOT EXISTS v_sessions_overview AS
+SELECT s.id AS session_id, datetime(s.created,'unixepoch','localtime') AS started_at,
+       datetime(s.ended,'unixepoch','localtime') AS ended_at, s.subject, s.operator, s.template AS question_set,
+       s.device AS watch_id,
+       (SELECT COUNT(*) FROM questions q WHERE q.session_id=s.id) AS questions_total,
+       (SELECT COUNT(*) FROM results r WHERE r.session_id=s.id) AS results_total,
+       (SELECT COUNT(*) FROM results r WHERE r.session_id=s.id AND r.verdict='lie') AS verdict_lie,
+       (SELECT COUNT(*) FROM results r WHERE r.session_id=s.id AND r.verdict='truth') AS verdict_truth
+FROM sessions s;
+CREATE VIEW IF NOT EXISTS v_question_results AS
+SELECT q.session_id, s.subject, q.ord AS question_order, q.qid AS watch_qid, q.kind AS question_kind,
+       q.text AS question_text, datetime(q.asked_at,'unixepoch','localtime') AS asked_at,
+       q.answer AS subject_answer, r.verdict, ROUND(r.p, 3) AS p_lie, r.quality AS signal_quality,
+       r.reasons AS reason_bits
+FROM questions q JOIN sessions s ON s.id = q.session_id
+LEFT JOIN results r ON r.question_id = q.id
+ORDER BY q.session_id, q.ord;
+CREATE VIEW IF NOT EXISTS v_training_questions AS
+SELECT t.run_id, r.subject, r.operator, t.question_no, t.watch_qid, t.mode, t.label AS answer_key,
+       t.verdict AS watch_verdict, ROUND(t.p_lie, 3) AS p_lie, t.quality AS signal_quality,
+       t.used_for_training, datetime(t.created,'unixepoch','localtime') AS recorded_at
+FROM training_questions t LEFT JOIN training_runs r ON r.run_id = t.run_id
+ORDER BY t.id;
+"""
 
 
 class Store:
@@ -65,10 +149,29 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         with self.lock:
+            self._migrate()
             self.db.executescript(SCHEMA)
+            self.db.executescript(VIEWS)
+            self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.commit()
         self._pending_samples: List[tuple] = []
+
+    def _migrate(self):
+        """ฐานข้อมูลจาก Studio v2.0 ใช้ชื่อคอลัมน์ย่อ (hr, gsr, tmp ...) -> เปลี่ยนชื่อเป็นอังกฤษเต็ม
+        ข้อมูลเดิมอยู่ครบ (ALTER TABLE ... RENAME COLUMN ไม่ลบข้อมูล)"""
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(samples)").fetchall()]
+        if not cols:
+            return                                   # ฐานข้อมูลใหม่ -> SCHEMA สร้างให้
+        for old, new in OLD_SAMPLE_NAMES.items():
+            if old in cols and new not in cols:
+                self.db.execute(f"ALTER TABLE samples RENAME COLUMN {old} TO {new}")
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(samples)").fetchall()]
+        if "question_id" not in cols:
+            self.db.execute("ALTER TABLE samples ADD COLUMN question_id INTEGER")
+        if "phase" not in cols:
+            self.db.execute("ALTER TABLE samples ADD COLUMN phase TEXT")
+        self.db.commit()
 
     # ------------------------------------------------------------ helpers
     def _q(self, sql: str, args: tuple = ()) -> List[sqlite3.Row]:
@@ -129,8 +232,9 @@ class Store:
     def add_question(self, sid: int, kind: str, text: str, hint: str = "", grp: str = "",
                      label: str = "") -> int:
         with self.lock:
-            # qid 800+ สงวนไว้ให้คำถามจาก Serial console/ปุ่มบนนาฬิกา -> นับเฉพาะ qid < 800
-            row = self.db.execute("SELECT COALESCE(MAX(ord),0)+1, COALESCE(MAX(CASE WHEN qid < 800 THEN qid END),0)+1 "
+            # แบ่งช่วง qid กันชนกัน: 1-499 เซสชัน, 500-599 ควบคุมด่วนหน้าหลัก, 600-799 หน้าเก็บข้อมูล,
+            # 800-899 Serial console, 900+ ปุ่มบนนาฬิกา
+            row = self.db.execute("SELECT COALESCE(MAX(ord),0)+1, COALESCE(MAX(CASE WHEN qid < 500 THEN qid END),0)+1 "
                                   "FROM questions WHERE session_id=?",
                                   (sid,)).fetchone()
             cur = self.db.execute(
@@ -199,53 +303,82 @@ class Store:
         return bool(rows)
 
     # ------------------------------------------------------------ samples
-    def queue_sample(self, sid: int, v: Dict[str, Any]):
-        self._pending_samples.append((sid, time.time(), v.get("hr"), v.get("hrv"), v.get("gsr"), v.get("gp"),
-                                      v.get("tmp"), v.get("trm"), v.get("mot"), v.get("si"), v.get("es"),
-                                      v.get("con"), v.get("gc"), v.get("vb")))
+    def queue_sample(self, sid: int, v: Dict[str, Any], question_id: Optional[int] = None):
+        """พักค่าไว้ในหน่วยความจำ แล้ว flush_samples() เขียนทีละชุดทุก 1 วินาที (เขียนดิสก์ทีละแถวช้า)"""
+        es = v.get("es")
+        phase = {1: "baseline", 3: "question"}.get(es, "rest")
+        self._pending_samples.append((sid, time.time(), question_id if es == 3 else None, phase,
+                                      v.get("hr"), v.get("hrv"), v.get("gsr"), v.get("gp"), v.get("tmp"),
+                                      v.get("trm"), v.get("mot"), v.get("si"), es, v.get("con"), v.get("gc"),
+                                      v.get("vb")))
 
     def flush_samples(self):
         if not self._pending_samples:
             return
         rows, self._pending_samples = self._pending_samples, []
+        cols = "session_id,t,question_id,phase," + ",".join(c for c, _ in SAMPLE_MAP[1:])
         with self.lock:
-            self.db.executemany("INSERT INTO samples VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            self.db.executemany(f"INSERT INTO samples({cols}) VALUES({','.join('?' * 16)})", rows)
             self.db.commit()
 
     def get_samples(self, sid: int, max_points: int = 2000) -> Dict[str, List]:
-        rows = self._q("SELECT " + ",".join(SAMPLE_COLS) + " FROM samples WHERE session_id=? ORDER BY t", (sid,))
+        """คืนค่าเป็นชื่อสั้น (hr, gsr ...) เพราะหน้าเว็บและรายงานใช้ชื่อเดียวกับ JSON จากนาฬิกา"""
+        rows = self._q("SELECT " + ",".join(c for c, _ in SAMPLE_MAP) + " FROM samples WHERE session_id=? ORDER BY t",
+                       (sid,))
         step = max(1, len(rows) // max_points)       # ลดจำนวนจุดให้กราฟเบา
         rows = rows[::step]
-        return {c: [r[i] for r in rows] for i, c in enumerate(SAMPLE_COLS)}
+        return {k: [r[i] for r in rows] for i, (_, k) in enumerate(SAMPLE_MAP)}
 
     # ------------------------------------------------------------ events
     def add_event(self, sid: Optional[int], typ: str, data: Dict[str, Any]):
         self._x("INSERT INTO events(session_id,t,type,data) VALUES(?,?,?,?)",
                 (sid, time.time(), typ, json.dumps(data, ensure_ascii=False)))
 
+    # ------------------------------------------------------------ training (หน้าเก็บข้อมูลเทรน AI)
+    def add_training_run(self, run_id: str, subject: str, operator: str, mode: str, signals: str, results: str):
+        self._x("INSERT OR IGNORE INTO training_runs(run_id,started,subject,operator,mode,signals_file,results_file) "
+                "VALUES(?,?,?,?,?,?,?)", (run_id, time.time(), subject, operator, mode, signals, results))
+
+    def end_training_run(self, run_id: str):
+        self._x("UPDATE training_runs SET ended=? WHERE run_id=?", (time.time(), run_id))
+
+    def add_training_question(self, run_id: str, e: Dict[str, Any]):
+        r = e.get("result") or {}
+        self._x("""INSERT INTO training_questions(run_id,question_no,watch_qid,mode,label,verdict,p_lie,decided_by,
+                   quality,used_for_training,data,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (run_id, e.get("question_no"), e.get("watch_qid"), e.get("mode"), e.get("label"), e.get("verdict"),
+                 e.get("p"), r.get("src"), r.get("quality"), 1 if e.get("used") else 0,
+                 json.dumps(r, ensure_ascii=False), time.time()))
+
     # ------------------------------------------------------------ export
     def export_results_csv(self, sid: int) -> str:
         s = self.get_session(sid)
         out = io.StringIO()
         w = csv.writer(out)
-        w.writerow(["order", "question", "kind", "answer", "verdict", "p_lie", "score", "quality", "reasons",
-                    "d_gsr_uS", "d_hr_bpm", "d_amp_frac", "d_tremor", "d_temp_C",
+        w.writerow(["order", "watch_qid", "question", "kind", "answer", "verdict", "p_lie", "score", "quality",
+                    "reasons", "d_gsr_uS", "d_hr_bpm", "d_amp_frac", "d_tremor", "d_temp_C",
                     "z_gsr", "z_hr", "z_amp", "z_trm", "z_tmp", "gsr_peak_latency_s"])
         by_q = {r["question_id"]: r for r in s["results"]}
         for q in s["questions"]:
             r = by_q.get(q["id"])
             d = r["data"] if r else {}
             feat, z = d.get("feat") or [None] * 5, d.get("z") or [None] * 5
-            w.writerow([q["ord"], q["text"], q["kind"], q["answer"] or "", d.get("verdict", ""), d.get("p", ""),
-                        d.get("score", ""), d.get("quality", ""), d.get("reasons", "")] + list(feat) + list(z) +
-                       [d.get("latency", "")])
+            w.writerow([q["ord"], q["qid"], q["text"], q["kind"], q["answer"] or "", d.get("verdict", ""),
+                        d.get("p", ""), d.get("score", ""), d.get("quality", ""), d.get("reasons", "")]
+                       + list(feat) + list(z) + [d.get("latency", "")])
         return "﻿" + out.getvalue()   # BOM ให้ Excel อ่านภาษาไทยถูก
 
     def export_samples_csv(self, sid: int) -> str:
-        data = self.get_samples(sid, max_points=10 ** 9)
+        """ไฟล์สัญญาณของเซสชัน: ทุกแถวบอกว่าอยู่ช่วงไหน (phase) และกำลังถามข้อไหน (question_order/watch_qid)"""
+        cols = ["t"] + [c for c, _ in SAMPLE_MAP[1:]]
+        rows = self._q(f"""SELECT datetime(sm.t,'unixepoch','localtime') AS time_local, sm.phase,
+                                  q.ord AS question_order, q.qid AS watch_qid, q.kind AS question_kind,
+                                  {",".join("sm." + c for c in cols)}
+                           FROM samples sm LEFT JOIN questions q ON q.id = sm.question_id
+                           WHERE sm.session_id=? ORDER BY sm.t""", (sid,))
         out = io.StringIO()
         w = csv.writer(out)
-        w.writerow(SAMPLE_COLS)
-        for i in range(len(data["t"])):
-            w.writerow([data[c][i] for c in SAMPLE_COLS])
+        w.writerow(["time_local", "phase", "question_order", "watch_qid", "question_kind"] + cols)
+        for r in rows:
+            w.writerow(list(r))
         return out.getvalue()

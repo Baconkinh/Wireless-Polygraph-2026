@@ -1,4 +1,12 @@
-// app.cpp — สร้างวัตถุ FreeRTOS และฟังก์ชันช่วยที่ทุก task ใช้
+// =====================================================================
+//  app.cpp — "กระดานกลาง" ของระบบ: วัตถุ FreeRTOS ที่ทุก task ใช้คุยกัน
+//  ทำอะไร   : createSyncObjects() สร้างคิว 4 ตัว (frame/wave/event/log), mutex 3 ตัว (live/engine/fs)
+//             และ event group (บิตสถานะ เช่น WiFi ขึ้น, เสียบ USB, แบตต่ำ) + ฟังก์ชัน setVitals/getVitals
+//  ทำไม     : task หลายตัวทำงานพร้อมกัน ถ้าอ่าน/เขียนตัวแปรเดียวกันตรง ๆ จะได้ข้อมูลครึ่ง ๆ กลาง ๆ (race condition)
+//             จึงส่งข้อมูลผ่านคิว (copy ทั้งก้อน) และล็อกด้วย mutex
+//  เรียกจาก : main.cpp setup() (สร้าง) แล้วทุก task ใช้ผ่าน namespace app::
+//  วิชา     : Real-time OS — queue, mutex, event group, shared state
+// =====================================================================
 #include "app.h"
 #include <stdarg.h>
 

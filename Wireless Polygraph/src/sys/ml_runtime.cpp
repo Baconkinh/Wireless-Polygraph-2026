@@ -1,4 +1,9 @@
-// ml_runtime.cpp — ดูคำอธิบายใน ml_runtime.h
+// =====================================================================
+//  ml_runtime.cpp — ตัวกลางระหว่างโมเดล AI กับ LieEngine + โหมด TRAIN/DETECT
+//  ทำอะไร   : begin() โหลดโมเดลจาก NVS แล้วผูก scorer ให้ LieEngine, install()/clearModel() เปลี่ยนโมเดล
+//             (ล็อก engineMutex), makeTrainRow() แปลงผลเป็น 1 แถว CSV ข้อมูลเทรน, ชื่อผู้ถูกทดสอบ
+//  เรียกจาก : main.cpp, tasks.cpp (engineTask ตอนได้ผล), web_server.cpp, cli.cpp, ui.cpp (ปุ่มกด 2 ครั้ง)
+// =====================================================================
 #include "ml_runtime.h"
 #include <time.h>
 #include "../app.h"

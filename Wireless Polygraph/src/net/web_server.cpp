@@ -1,4 +1,11 @@
-// web_server.cpp — ดูรายการ API ใน web_server.h
+// =====================================================================
+//  web_server.cpp — backend ในนาฬิกา: HTTP server พอร์ต 80 (รายการ API ทั้งหมดอยู่ใน web_server.h)
+//  ทำอะไร   : ส่งหน้าเว็บ (web_page.h), ตอบ REST API เป็น JSON: ค่าสด, สั่ง baseline/คำถาม, ตั้งค่า, AI,
+//             การหลับ, WiFi, ดาวน์โหลด CSV, OTA — ทุกคำสั่งที่แตะ LieEngine ล็อก engineMutex ก่อน
+//  เรียกจาก : tasks.cpp httpTask (เรียก server.handleClient() วนไป)
+//  ผู้เรียก : หน้าเว็บ 192.168.4.1, Polygraph Studio (watch_link.py), ml/train.py (--upload)
+//  วิชา     : WiFi (SoftAP + web server), JSON/REST
+// =====================================================================
 #include "web_server.h"
 #include <WebServer.h>
 #include <LittleFS.h>

@@ -1,4 +1,9 @@
-// sysinfo.cpp — ดูคำอธิบายใน sysinfo.h
+// =====================================================================
+//  sysinfo.cpp — รวบรวมข้อมูลภายในระบบให้หน้า "ระบบ & อุปกรณ์" และ /api/system
+//  ทำอะไร   : รายชื่อ task + priority + stack ที่เหลือ + %CPU, heap, แผนที่ partition, สถานะ WDT/OTA/พลังงาน
+//  ทำไม     : พิสูจน์ได้ว่าใช้ RTOS/หน่วยความจำ/watchdog จริง (ค่าจาก API ของ ESP-IDF ณ เวลาที่ขอ)
+//  เรียกจาก : web_server.cpp (/api/info, /api/system)
+// =====================================================================
 #include "sysinfo.h"
 #include <WiFi.h>
 #include <LittleFS.h>

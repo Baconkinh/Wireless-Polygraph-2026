@@ -1,4 +1,10 @@
-// power.cpp — ดูตารางโหมดใน power.h
+// =====================================================================
+//  power.cpp — โหมดพลังงาน (ตารางอยู่ใน power.h): NORMAL / ECO / LIGHT SLEEP / DEEP SLEEP / STANDBY
+//  ทำอะไร   : รับคำขอหลับจาก HTTP/CLI/ปุ่ม แล้วให้ supervisor ทำ (ตอบ HTTP ทันก่อนหลับ), หยุด sensor ที่จุดปลอดภัย,
+//             ตั้งแหล่งปลุก (ปุ่ม/timer), หลับอัตโนมัติเมื่อไม่มีใครใช้ (ค่าเริ่มต้น = ปิด), ป้องกันแบตหมด (< 3.3 V)
+//  เรียกจาก : tasks.cpp supervisorTask -> power::service() ทุก 1 วินาที, main.cpp handleWakeEarly()
+//  วิชา     : Sleep modes, Wakeup sources, Power optimization
+// =====================================================================
 #include "power.h"
 #include "esp_sleep.h"
 #include "driver/gpio.h"

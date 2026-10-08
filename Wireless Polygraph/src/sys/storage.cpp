@@ -1,4 +1,11 @@
-// storage.cpp — ดูภาพรวมใน storage.h
+// =====================================================================
+//  storage.cpp — หน่วยความจำทุกชนิด (ตารางอยู่ใน storage.h)
+//  ทำอะไร   : NVS (Preferences) = ค่าตั้ง + โมเดล AI, EEPROM emulation = สถิติสะสม + CRC32,
+//             RTC_DATA/RTC_NOINIT = ตัวนับตอนหลับ + กล่องดำ, LittleFS = log/ผล/ข้อมูลเทรน (หมุนไฟล์เมื่อใหญ่)
+//  ทำไม     : ข้อมูลแต่ละแบบต้องการความทนทานต่างกัน (ทนไฟดับ / รอดรีเซ็ต / ไฟล์ใหญ่ดาวน์โหลดได้)
+//  เรียกจาก : แทบทุกโมดูล; การเขียนแฟลชทำใน supervisorTask เท่านั้น (ผ่าน logQueue + fsMutex)
+//  วิชา     : Memory system (Flash, NVS, SPIFFS/LittleFS, EEPROM, RTC memory)
+// =====================================================================
 #include "storage.h"
 #include <Preferences.h>
 #include <EEPROM.h>

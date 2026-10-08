@@ -1,4 +1,10 @@
-// ml_model.cpp — ดูคำอธิบายใน ml_model.h
+// =====================================================================
+//  ml_model.cpp — โมเดล AI (Logistic Regression) ที่คำนวณบนนาฬิกาเอง
+//  ทำอะไร   : extract() ดึง feature 12 ตัวจากผลของ LieEngine, predict() = sigmoid(b + Σ w·(x−mean)/scale),
+//             seal()/valid() ใส่และตรวจ CRC32 ก่อนเก็บลง NVS (กันโมเดลเสีย)
+//  เรียกจาก : sys/ml_runtime.cpp (ผูกเป็น scorer ของ LieEngine), web_server.cpp (รับโมเดลที่อัปโหลด)
+//  คู่กัน   : Polygraph-Studio/ml/polyml.py (ฝั่งเทรนบนคอม ใช้สูตรเดียวกัน)
+// =====================================================================
 #include "ml_model.h"
 #include <math.h>
 #include <stddef.h>

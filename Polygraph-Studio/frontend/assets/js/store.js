@@ -11,6 +11,8 @@ export const S = {
   lie: null,           // สถานะ LieEngine (baseline, calibration, ผล)
   device: { hi: {}, info: {} },
   session: null,       // เซสชันที่เปิดอยู่
+  collect: null,       // สถานะหน้าเก็บข้อมูลเทรน AI (backend/collector.py)
+  credits: null,       // ชื่อโครงงาน รายวิชา ผู้จัดทำ
   meta: null,
   lastResult: null,    // {result, question, explain}
   hist: { t: [], gsr: [], gp: [], hr: [], si: [], trm: [], mot: [], tmp: [] },

@@ -5,17 +5,18 @@ import { S, on } from './store.js';
 import { connectWS } from './ws.js';
 import { $, $$, fmt, toast, STATE_TH, vinfo } from './ui.js';
 
-const TITLES = { session: 'ทดสอบ', results: 'ผลลัพธ์ & รายงาน', system: 'ระบบ & อุปกรณ์', guide: 'คู่มือ & หลักการ' };
+const TITLES = { home: 'Wireless Polygraph', collect: 'เก็บข้อมูลเทรน AI', results: 'ผลลัพธ์ & รายงาน',
+  system: 'ระบบ & อุปกรณ์', guide: 'คู่มือ & หลักการ' };
 const views = {};          // name -> module (หรือ fallback)
-let current = 'session';
+let current = 'home';
 
 // ---------------------------------------------------------------- theme
 function applyTheme(t) {
   document.documentElement.classList.toggle('light', t === 'light');
   try { localStorage.setItem('theme', t); } catch { /* */ }
 }
-let theme = 'dark';
-try { theme = localStorage.getItem('theme') || 'dark'; } catch { /* */ }
+let theme = 'light';                    // ค่าเริ่มต้นโหมดสว่าง (สลับมืดได้ที่ปุ่มมุมขวาบน)
+try { theme = localStorage.getItem('theme') || 'light'; } catch { /* */ }
 applyTheme(theme);
 
 // ---------------------------------------------------------------- fallback view (ถ้าโหลดหน้าไม่ได้)
@@ -48,7 +49,8 @@ async function loadView(name) {
 }
 
 async function show(name) {
-  if (!TITLES[name]) name = 'session';
+  if (name === 'session') name = 'home';  // หน้า "ทดสอบ" เดิมถูกรวมเข้าหน้าหลักแล้ว (ลิงก์เก่ายังใช้ได้)
+  if (!TITLES[name]) name = 'home';
   current = name;
   $$('#nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
@@ -65,7 +67,7 @@ window.goto = show;
 // หน้าเว็บที่ฝังในนาฬิกา
 $('#link-watchpage').addEventListener('click', () => {
   const st = S.status || {};
-  if (st.simulator) { toast('นาฬิกาจำลองไม่มีหน้าเว็บในตัว — มีเฉพาะนาฬิกาจริงที่ http://192.168.4.1', 'warn'); return; }
+  // นาฬิกาจำลองเปิดหน้าเว็บแบบเดียวกับนาฬิกาจริงที่ http://127.0.0.1:8081/
   window.open(st.http || 'http://192.168.4.1', '_blank');
 });
 
@@ -81,7 +83,9 @@ function topbar() {
     : 'ต่อ WiFi <b>Polygraph-Watch</b><br>รหัส polygraph123';
   if (v) {
     $('#engine-text').textContent = (STATE_TH[v.es] || '-') + (v.es === 1 || v.es === 3 ? ` ${Math.round((v.ep || 0) * 100)}%` : '');
-    $('#batt-text').textContent = v.bat ? `${v.bp}% · ${fmt(v.vb / 1000, 2)} V` : 'ไฟ USB';
+    // แสดง % เสมอเมื่อวัดแรงดันแบตได้ (v.bat) แม้จะเสียบ USB อยู่ด้วย
+    const usb = (v.fl & 256) !== 0;
+    $('#batt-text').textContent = v.bat ? `${v.bp}% · ${fmt(v.vb / 1000, 2)} V${usb ? ' · USB' : ''}` : 'ไฟ USB (ไม่พบแบต)';
   }
   if (st && st.stats) {
     const s = st.stats;
@@ -89,6 +93,13 @@ function topbar() {
   }
 }
 on('status', topbar); on('vitals', topbar); on('snapshot', topbar); on('device', topbar);
+
+// ---------------------------------------------------------------- ผู้จัดทำ (แถบซ้ายล่าง)
+on('snapshot', () => {
+  const c = S.credits; if (!c) return;
+  $('#side-credits').innerHTML = `<b>ผู้จัดทำ</b><br>${c.members.map((m) => `${m.name} ${m.id}`).join('<br>')}
+    <div style="margin-top:4px">${c.course.split(' (')[0]}</div>`;
+});
 on('ws', (ok) => { if (!ok) { $('#conn-dot').className = 'dot off'; $('#conn-text').textContent = 'Studio ขาดการเชื่อมต่อ... ต่อใหม่'; } });
 
 // ---------------------------------------------------------------- การแจ้งเตือนเหตุการณ์
@@ -99,7 +110,7 @@ on('event', (e) => {
     case 'low_batt': toast(`แบตเตอรี่อ่อน (${e.mv} mV) — ควรชาร์จ`, 'warn', 9000); break;
     case 'button': toast(`ปุ่มบนนาฬิกา: ${e.g} → ${e.act}`, 'info'); break;
     case 'result':
-      if (current !== 'session') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
+      if (current !== 'home') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
       break;
     default: break;
   }
@@ -115,4 +126,4 @@ on('device', (d) => {
 $('#btn-theme').addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(theme); });
 fetch('/api/status').then((r) => r.json()).then((s) => { $('#studio-ver').textContent = 'v' + (s.studio || ''); }).catch(() => {});
 connectWS();
-show(location.hash.slice(1) || 'session');
+show(location.hash.slice(1) || 'home');

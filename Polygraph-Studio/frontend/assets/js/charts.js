@@ -39,7 +39,7 @@ const qwindows = {
     ctx.restore();
   },
 };
-Chart.register(qwindows);
+if (typeof Chart !== 'undefined') Chart.register(qwindows);   // ไม่มี Chart.js ก็ยังโหลดโมดูลนี้ได้
 
 // ---------------------------------------------------------------- กราฟเส้นแบบเลื่อน (2 นาทีล่าสุด)
 export function liveLine(canvas, series, { y = {}, y2 = null, windows = true } = {}) {

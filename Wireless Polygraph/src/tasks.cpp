@@ -1,4 +1,12 @@
-// tasks.cpp — ดูตาราง task ใน tasks.h
+// =====================================================================
+//  tasks.cpp — สร้าง FreeRTOS task ทั้ง 6 ตัว + hardware timer 100 Hz (ตารางอยู่ใน tasks.h)
+//  ทำอะไร   : onTick() (ISR) ปลุก sensorTask -> sensorTask อ่านเซนเซอร์ -> engineTask ป้อน frame ให้ LieEngine
+//             -> ได้ผลแล้วส่ง eventQueue (ไป UDP) + logQueue (ไปเขียนแฟลช) -> supervisorTask เขียนแฟลช/เฝ้า task อื่น
+//  ทำไม     : แยกงานตามความเร่งด่วน (priority) งานที่ต้องตรงเวลาไม่ถูกงานช้า (เขียนแฟลช/WiFi) ถ่วง
+//             ISR สั้นที่สุด (แค่ส่ง notification) = deferred interrupt processing
+//  เรียกจาก : main.cpp setup() -> tasks::startAll()
+//  วิชา     : Interrupt, Hardware timer, RTOS task/priority/queue, Watchdog (ทุก task เรียก wdt::feed)
+// =====================================================================
 #include "tasks.h"
 #include <time.h>
 #include "esp_task_wdt.h"

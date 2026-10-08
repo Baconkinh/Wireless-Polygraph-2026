@@ -17,11 +17,22 @@ export function mount(el) {
   mounted = true;
   el.innerHTML = `
   <div class="grid g2">
+    <div class="card span2">
+      <h3>${I('layers')} หน้าต่าง ๆ ใน Studio</h3>
+      <div class="kv">
+        <span>Wireless Polygraph</span><span>หน้าหลัก: ค่าสด 6 ช่อง + กราฟเรียลไทม์ · ซ้าย = ทดสอบแบบเซสชัน (ถามต่อกันหลายข้อ มีรายงาน)
+          · ขวา = ควบคุมด่วนทีละข้อ + ตั้งค่าการหลับ/ECO/WiFi</span>
+        <span>เก็บข้อมูลเทรน AI</span><span>เก็บข้อมูลทีละข้อแบบ fix/manual แสดงข้อที่ (qid) ไฟล์ที่บันทึก ใครถาม-ใครตอบ เส้นนับถอยหลัง 12 วินาที</span>
+        <span>ผลลัพธ์ &amp; รายงาน</span><span>ประวัติทุกเซสชัน ดาวน์โหลด CSV รายงานพิมพ์ได้ (สลับสว่าง/มืด)</span>
+        <span>ระบบ &amp; อุปกรณ์</span><span>แผนที่หน่วยความจำแฟลช, FreeRTOS task, watchdog, พลังงาน, OTA, ตั้งค่า LieEngine</span>
+        <span>ความหมายข้อมูล</span><span><a href="/report-data-dictionary" target="_blank">Data Dictionary</a> — อธิบายทุกตาราง/คอลัมน์ใน CSV และฐานข้อมูล</span>
+      </div>
+    </div>
     <div class="card">
       <h3>${I('clip')} เริ่มใช้งานใน 6 ขั้น</h3>
       <ol>
         <li>ใส่นาฬิกาให้ <b>เซนเซอร์ชีพจร</b> แนบผิว (แผ่น GSR ถ้ามีก็ดี ไม่มีก็ใช้ได้) นั่งนิ่ง ๆ</li>
-        <li>ไปหน้า <b>ทดสอบ</b> → กรอกชื่อผู้ถูกทดสอบ → เลือกชุดคำถาม → <b>เริ่มเซสชัน</b></li>
+        <li>หน้า <b>Wireless Polygraph</b> (หน้าหลัก) ฝั่งซ้าย → กรอกชื่อผู้ถูกทดสอบ → เลือกชุดคำถาม → <b>เริ่มเซสชัน</b></li>
         <li>กด <b>วัด Baseline</b> (นั่งนิ่งหายใจปกติ ~30 วินาที)</li>
         <li>กด <b>ถาม</b> ที่คำถามควบคุม (ตอบจริง / สั่งให้โกหก) ให้ครบ — ระบบปรับเกณฑ์ให้เข้ากับคนนี้</li>
         <li>กด <b>ถาม</b> ที่คำถามจริง → อ่านออกเสียง → กดคำตอบ ใช่/ไม่ใช่ → รอ 12 วินาที</li>
@@ -45,9 +56,10 @@ export function mount(el) {
     <div class="card span2">
       <h3>${I('chip')} AI (Machine Learning) — เก็บข้อมูล → เทรน → ใช้งานจริง</h3>
       <ol>
-        <li><b>เก็บข้อมูล:</b> หน้าเว็บนาฬิกา (192.168.4.1) เลือกโหมด <b>"เก็บข้อมูลเทรน AI"</b> → วัดค่าปกติ →
-        กด "ถามข้อที่ให้ตอบตามจริง" หรือ "ถามข้อที่สั่งให้โกหก" สลับกัน ทุกข้อถูกบันทึกลงไฟล์ CSV ในนาฬิกา
-        (หรือรัน <span class="mono">collect_data.bat</span> ให้บันทึกลงคอมพร้อมกัน)</li>
+        <li><b>เก็บข้อมูล:</b> เมนู <b>"เก็บข้อมูลเทรน AI"</b> ใน Studio → กรอกชื่อผู้ตอบ/ผู้ถาม เลือกโหมด
+        <b>fix</b> (บอกเฉลยก่อนถาม) หรือ <b>manual</b> (ผู้ตอบบอกเฉลยหลังตอบ) → วัดค่าปกติ → ถามทีละข้อ
+        ทุกข้อบันทึกลง CSV ในคอม (<span class="mono">data\signals_*.csv, results_*.csv, training_samples.csv</span>)
+        — ใช้ <span class="mono">collect_data.bat</span> หรือหน้าเว็บนาฬิกาแทนได้</li>
         <li><b>เทรน:</b> กด "ดาวน์โหลด CSV" ไว้ในโฟลเดอร์ <span class="mono">Polygraph-Studio\\data</span> แล้วดับเบิลคลิก
         <span class="mono">train_ai.bat</span> — ได้ <span class="mono">data\\model.json</span> พร้อมความแม่นยำจาก cross-validation</li>
         <li><b>ใช้งานจริง:</b> อัปโหลด model.json ที่หน้าเว็บนาฬิกา (การ์ด "โมเดล AI") แล้วเลือกโหมด <b>"ใช้งานจริง"</b>

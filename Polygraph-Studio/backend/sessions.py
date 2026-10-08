@@ -74,6 +74,7 @@ def normalize_result(r: Dict[str, Any]) -> Dict[str, Any]:
         "score": r.get("score"), "quality": r.get("q"), "reasons": r.get("rs", 0), "ok": r.get("ok", 0),
         "feat": r.get("f") or [None] * 5, "z": r.get("z") or [None] * 5, "pre": None,
         "latency": r.get("lat"), "answerAt": r.get("ans"), "answerYes": r.get("ay"), "tStart": None,
+        "src": r.get("src"),
     }
 
 
@@ -91,7 +92,7 @@ def level_of(z: Optional[float]) -> str:
 
 def explain(r: Dict[str, Any], weights: Optional[List[float]]) -> Dict[str, Any]:
     """อธิบายผล 1 ข้อเป็นภาษาไทย + สัดส่วนที่แต่ละสัญญาณมีต่อคะแนน"""
-    w = weights or [0.45, 0.25, 0.15, 0.10, 0.05]
+    w = weights or [0.20, 0.35, 0.25, 0.12, 0.08]     # ค่าเริ่มต้นเท่าเฟิร์มแวร์ v2.1 (ลดน้ำหนัก GSR)
     ok = int(r.get("ok") or 0)
     z = r.get("z") or [None] * 5
     feat = r.get("feat") or [None] * 5
@@ -133,6 +134,7 @@ class Interrogation:
         self.store = store
         self.hub = hub
         self.link = None                      # ตั้งค่าใน main.py หลังสร้าง WatchLink
+        self.collector = None                 # หน้าเก็บข้อมูลเทรน AI (collector.py) — ตั้งใน main.py
         self.active: Optional[int] = None
         self.current_q: Optional[int] = None  # id ของคำถามที่กำลังถาม
         self.start_boot = ""
@@ -274,7 +276,10 @@ class Interrogation:
 
     def on_vitals(self, v: Dict[str, Any]):
         if self.active:
-            self.store.queue_sample(self.active, v)
+            # ผูกแต่ละแถวกับคำถามที่กำลังถาม -> ไฟล์สัญญาณบอกได้ว่าค่านี้มาจากข้อไหน
+            self.store.queue_sample(self.active, v, self.current_q)
+        if self.collector:
+            self.collector.on_vitals(v)
         self.hub.publish("vitals", v)
 
     def on_wave(self, w: Dict[str, Any]):
@@ -305,6 +310,11 @@ class Interrogation:
             self._ingest(r)
 
     def _ingest(self, r: Dict[str, Any]):
+        # ผลของหน้าเก็บข้อมูลเทรน AI (qid 600-799) ไม่ปนกับเซสชันทดสอบ
+        if self.collector and self.collector.on_result(r):
+            return
+        if 500 <= (r.get("qid") or 0) < 600:   # คำถามจาก "ควบคุมด่วน" หน้าหลัก (ถามทีละข้อ ไม่อยู่ในเซสชัน)
+            return
         if not self.active or not self.link:
             return
         boot = self.link.boot_key
@@ -317,7 +327,9 @@ class Interrogation:
             return
         q = self.store.find_question_for_result(self.active, r.get("qid") or 0)
         if not q:
-            src = "ปุ่มบนนาฬิกา" if (r.get("qid") or 0) >= 900 else ("Serial console" if (r.get("qid") or 0) >= 800 else "นอก Studio")
+            qn = r.get("qid") or 0
+            src = "ปุ่มบนนาฬิกา" if qn >= 900 else ("Serial console" if qn >= 800 else
+                                                   ("หน้าเก็บข้อมูล" if qn >= 600 else "นอก Studio"))
             qid = self.store.add_question(self.active, r.get("kind") or "test",
                                           f"(คำถามที่เริ่มจาก{src} #{r.get('qid')})", "", "", "")
             self.store.mark_asked(qid, time.time() - 12)
