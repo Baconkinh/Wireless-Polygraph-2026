@@ -27,7 +27,8 @@ export function mount(el) {
       <div class="card" id="us-main"></div>
       <div class="stack">
         <div class="card"><h3>${I('chip')} AI ที่นาฬิกาใช้ตัดสิน</h3><div id="us-ai" class="small"></div></div>
-        <div class="card"><h3>${I('list')} รอบนี้</h3><div id="us-stat"></div><div id="us-hist" class="small muted" style="margin-top:8px">ยังไม่มีข้อ</div></div>
+        <div class="card"><h3>${I('list')} รอบนี้</h3><div id="us-stat"></div><div id="us-hist" class="small muted" style="margin-top:8px">ยังไม่มีข้อ</div>
+          <div class="small faint" style="margin-top:6px">ลบข้อที่ถามผิด/ทดลอง: ติ๊กหรือกด ${I('trash')} ในตาราง "ประวัติการใช้งานจริง" ด้านล่าง (กู้คืนได้)</div></div>
         <div class="card"><h3>${I('info')} ทำไมต้องกด ถูก / ผิด</h3>
           <p class="small">นาฬิกาไม่รู้คำตอบจริง เราจึงบอกหลังได้ผลว่านาฬิกาทายถูกหรือผิด เพื่อ
           (1) วัดความแม่นยำตอนใช้งานจริง และ (2) ข้อที่รู้คำตอบถูกจะถูกบันทึกเป็นข้อมูลเทรนต่อได้

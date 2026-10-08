@@ -10,7 +10,7 @@
 import { S, on } from '../store.js';
 import { $, esc, toast, confirmModal, timeStr, bytes } from '../ui.js';
 import { get, post } from '../api.js';
-import { historyHtml, mountHistory } from '../history.js';
+import { historyHtml, mountHistory, originBadge } from '../history.js';
 
 const I = (n) => `<svg class=i><use href=#i-${n}></use></svg>`;
 let root, hist, files = [];
@@ -28,12 +28,21 @@ export function mount(el) {
       <div class="row" style="margin-top:12px">
         <a class="btn" id="dt-merge-sel" href="/api/data/merged.csv">${I('down')} รวมไฟล์ที่ติ๊กเป็นไฟล์เดียว (ดาวน์โหลด)</a>
         <a class="btn ghost" href="/api/data/merged.csv?files=all">${I('down')} รวมทุกไฟล์</a>
-        <button class="btn" id="dt-pull">${I('wifi')} ดึงข้อมูลที่นาฬิกาบันทึกเอง</button>
-        <label class="btn ghost" style="cursor:pointer">${I('up')} นำเข้าไฟล์ CSV<input type="file" id="dt-import" accept=".csv" hidden></label>
+        <button class="btn" id="dt-pull" title="ที่มา = esp_backup">${I('wifi')} ดึงข้อมูลที่นาฬิกาบันทึกเอง (สำรองจากบอร์ด)</button>
+        <label class="btn ghost" style="cursor:pointer" title="ที่มา = mobile ถ้าเป็นไฟล์ polygraph_train.csv">${I('up')} นำเข้าไฟล์ CSV (จากมือถือ)<input type="file" id="dt-import" accept=".csv" hidden></label>
       </div>
       <p class="small muted" style="margin-top:8px">ติ๊ก "ใช้เทรน" ออก = train.py จะไม่อ่านไฟล์นั้น (บันทึกใน data/train_exclude.txt — train_ai.bat ก็ใช้รายการเดียวกัน)
         · ไฟล์รวมสร้างตอนกดดาวน์โหลดเท่านั้น ไม่เก็บซ้ำใน data/ (ไม่งั้นข้อเดิมจะถูกนับ 2 ครั้ง)
-        · "ดึงข้อมูลที่นาฬิกาบันทึกเอง" ใช้เมื่อเก็บข้อมูลผ่านหน้าเว็บนาฬิกาบนมือถือ (โหมด train) — ข้อที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ</p>
+        · "ดึงข้อมูลที่นาฬิกาบันทึกเอง" ใช้เมื่อเก็บข้อมูลผ่านหน้าเว็บนาฬิกาบนมือถือ (โหมด train) — ข้อที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ
+        · คอลัมน์ <b>ที่มา</b>: คอม = Studio บันทึกเอง, มือถือ = ไฟล์ polygraph_train.csv ที่มือถือดาวน์โหลดแล้วนำเข้า,
+          สำรองจากบอร์ด = คอมดึงจากหน่วยความจำนาฬิกาโดยตรง (ข้อมูลชุดเดียวกับมือถือ ระบบตัดข้อซ้ำให้)
+        · ปุ่ม ${I('trash')} = ย้ายไฟล์ไปถังขยะ (ไม่ลบถาวร)</p>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>${I('trash')} ถังขยะ <span class="mono small">data/trash/</span>
+        <span class="right small muted" id="dt-trash-n"></span></h3>
+      <p class="small muted">ไฟล์ที่ลบจากหน้าเว็บ และสำเนาก่อนลบรายข้อ/แก้ "ใช้เทรน" อยู่ที่นี่ทั้งหมด — กด "กู้คืน" เพื่อเอากลับ
+        (ถ้าชื่อซ้ำกับไฟล์ที่ใช้อยู่ ไฟล์ที่ใช้อยู่จะถูกเก็บเข้าถังขยะแทน ไม่มีอะไรหาย) · อยากลบถาวรให้ลบโฟลเดอร์ data/trash/ เอง</p>
+      <div style="overflow:auto;max-height:280px"><table class="t small" id="dt-trash"></table></div>
     </div>
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><h3>${I('flask')} เทรน AI</h3>
@@ -107,28 +116,61 @@ function paintFiles(d) {
   const t = d.total || {};
   $('#dt-total', root).textContent = `${t.files || 0} ไฟล์ · ${t.rows || 0} ข้อ · ใช้เทรนได้ ${t.used || 0} ข้อ (เฉพาะไฟล์ที่ติ๊ก)`;
   const L = (f, k) => (f.labels || {})[k] || 0;
-  $('#dt-files', root).innerHTML = `<tr><th>ใช้เทรน</th><th>ไฟล์</th><th>ช่วงเวลา</th><th>ผู้ตอบ</th><th>โหมด</th><th>ข้อ</th>
+  $('#dt-files', root).innerHTML = `<tr><th>ใช้เทรน</th><th>ไฟล์</th><th>ช่วงเวลา</th><th>ผู้ตอบ</th><th>โหมด</th><th>ที่มา</th><th>ข้อ</th>
       <th>จริง / โกหก / ไม่รู้</th><th>ใช้เทรนได้</th><th>ใช้งานจริง ถูก/ผิด</th><th></th></tr>` +
     (files.slice().reverse().map((f) => `<tr>
       <td><input type="checkbox" data-n="${esc(f.name)}" ${f.excluded ? '' : 'checked'}></td>
       <td class="mono">${esc(f.name)}${f.error ? `<div class="small" style="color:var(--lie)">${esc(f.error)}</div>` : ''}</td>
       <td class="small mono">${esc((f.first || '').slice(0, 16))}${f.last && f.last !== f.first ? ' → ' + esc((f.last || '').slice(11, 16)) : ''}</td>
-      <td>${esc((f.subjects || []).join(', '))}</td><td class="small">${esc((f.modes || []).join(', '))}</td><td>${f.rows || 0}</td>
+      <td>${esc((f.subjects || []).join(', '))}</td><td class="small">${esc((f.modes || []).join(', '))}</td>
+      <td>${(f.origins || []).map(originBadge).join(' ') || '-'}</td><td>${f.rows || 0}</td>
       <td>${L(f, 'truth')} / ${L(f, 'lie')} / ${L(f, 'unknown') + L(f, 'aborted')}</td>
       <td><b>${f.used || 0}</b>${f.stale ? ` <span class="small muted" title="ผลค้างจากรอบก่อน (บั๊กเดิม) ถูกตั้งไม่ใช้เทรน">(ผลค้าง ${f.stale})</span>` : ''}</td>
       <td>${f.correct || f.wrong ? `${f.correct} / ${f.wrong}` : '-'}</td>
       <td><div class="acts"><a class="btn sm ghost" title="ดาวน์โหลดไฟล์นี้" href="/api/data/file/${encodeURIComponent(f.name)}">${I('down')}</a>
-        <button class="btn sm ghost nowrap" data-view="${esc(f.name)}">ดู</button></div></td></tr>`).join('')
-      || '<tr><td colspan="10" class="muted">ยังไม่มีไฟล์ result_*.csv — เริ่มเก็บข้อมูลที่หน้า "เก็บข้อมูลเทรน AI"</td></tr>');
+        <button class="btn sm ghost nowrap" data-view="${esc(f.name)}">ดู</button>
+        <button class="btn sm ghost" title="ย้ายไฟล์นี้ไปถังขยะ" data-trash="${esc(f.name)}">${I('trash')}</button></div></td></tr>`).join('')
+      || '<tr><td colspan="11" class="muted">ยังไม่มีไฟล์ result_*.csv — เริ่มเก็บข้อมูลที่หน้า "เก็บข้อมูลเทรน AI"</td></tr>');
   root.querySelectorAll('#dt-files input[type=checkbox]').forEach((c) => {
     c.onchange = () => post('/api/data/exclude', { name: c.dataset.n, exclude: !c.checked });
   });
   root.querySelectorAll('#dt-files button[data-view]').forEach((b) => {
     b.onclick = () => { hist.setFile(b.dataset.view); $('#dt-hcard', root).scrollIntoView({ behavior: 'smooth' }); };
   });
+  root.querySelectorAll('#dt-files button[data-trash]').forEach((b) => {
+    b.onclick = async () => {
+      const n = b.dataset.trash;
+      if (!(await confirmModal('ย้ายไฟล์ไปถังขยะ?', `<p><span class="mono">${esc(n)}</span> จะถูกย้ายไป <span class="mono">data/trash/</span>
+        (ไฟล์ค่าสดของรอบนั้นด้วย) — train.py จะไม่อ่านอีก กู้คืนได้จากการ์ดถังขยะด้านล่าง</p>`, 'ย้ายไปถังขยะ', true))) return;
+      const r = await post('/api/data/delete_file', { name: n });
+      if (r && r.ok) toast(r.msg, 'ok', 6000);
+      loadFiles();
+    };
+  });
+  loadTrash();
   const sel = files.filter((f) => !f.excluded).map((f) => f.name);
   $('#dt-merge-sel', root).href = `/api/data/merged.csv?files=${encodeURIComponent(sel.join(','))}`;
   $('#dt-train', root).innerHTML = `${I('flask')} เทรน AI จากไฟล์ที่ติ๊ก (${t.used || 0} ข้อ)`;
+}
+
+// ถังขยะ: รายการไฟล์ที่ลบ + สำเนาก่อนแก้ พร้อมปุ่มกู้คืน
+async function loadTrash() {
+  const r = await get('/api/data/trash', { quiet: true });
+  const items = (r && r.items) || [];
+  $('#dt-trash-n', root).textContent = items.length ? `${items.length} ไฟล์` : '';
+  $('#dt-trash', root).innerHTML = `<tr><th>ไฟล์ในถังขยะ</th><th>คืออะไร</th><th>ข้อ</th><th>เวลา</th><th></th></tr>` +
+    (items.map((x) => `<tr><td class="mono">${esc(x.name)}</td>
+      <td class="small">${x.backup_of_edit ? `สำเนาของ ${esc(x.original)} ก่อนลบรายข้อ/แก้` : 'ไฟล์ที่ถูกลบทั้งไฟล์'}</td>
+      <td>${x.rows}</td><td class="small">${timeStr(x.mtime)}</td>
+      <td><button class="btn sm ghost" data-restore="${esc(x.name)}">กู้คืน</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="muted">ถังขยะว่าง</td></tr>');
+  root.querySelectorAll('#dt-trash button[data-restore]').forEach((b) => {
+    b.onclick = async () => {
+      const r2 = await post('/api/data/restore', { name: b.dataset.restore });
+      if (r2 && r2.ok) toast(r2.msg, 'ok', 7000);
+      loadFiles(); if (hist) hist.refresh();
+    };
+  });
 }
 
 // ดึงข้อมูลที่นาฬิกาบันทึกเองมาเป็น result_*.csv (เฉพาะข้อใหม่)

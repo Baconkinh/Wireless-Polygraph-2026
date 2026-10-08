@@ -600,6 +600,55 @@ void hMlDataClear() {
   replyOk("ล้างข้อมูลเทรนแล้ว");
 }
 
+// POST /api/ml/feedback?seq=&label=truth|lie
+// โหมดใช้งานจริงบนมือถือ: ได้ผลแล้วผู้ใช้บอกว่า "ที่จริงพูดจริงหรือโกหก" (หน้าเว็บแปลง ถูก/ผิด เป็นเฉลยให้)
+// -> ผลข้อนั้น (หาจาก seq ใน 24 ข้อล่าสุด) + เฉลย = 1 แถวใน /train.csv เหมือนข้อควบคุมในโหมดเก็บข้อมูล
+// ทำไมต้องมี: เดิมโหมดใช้งานจริงบนมือถือไม่ได้เก็บอะไรเลย ต่างจาก Studio ที่บันทึกถูก/ผิดไปเทรนต่อได้
+uint32_t s_fbSeq[8] = {0};            // seq ที่บันทึกไปแล้ว (กันกดซ้ำแล้วได้แถวซ้ำ)
+uint8_t s_fbPos = 0;
+void hMlFeedback() {
+  const String lb = server.arg("label");
+  if (lb != "truth" && lb != "lie") return replyFail(400, "BAD_LABEL", "label ต้องเป็น truth หรือ lie");
+  const uint32_t seq = (uint32_t)strtoul(server.arg("seq").c_str(), nullptr, 10);
+  if (!seq) return replyFail(400, "BAD_SEQ", "ต้องระบุ seq ของผล");
+  for (uint32_t s : s_fbSeq)
+    if (s == seq) return replyFail(409, "DUPLICATE", "ข้อนี้บันทึกไปแล้ว");
+  lie::Result r;
+  bool found = false;
+  xSemaphoreTake(app::engineMutex, portMAX_DELAY);
+  for (int i = 0; i < Engine::kMaxRes && app::engine.result(i, r); i++)
+    if (r.seq == seq) { found = true; break; }
+  xSemaphoreGive(app::engineMutex);
+  if (!found) return replyFail(404, "NO_RESULT", "ไม่พบผลข้อนี้ในนาฬิกา (เก่าเกิน 24 ข้อ หรือนาฬิการีบูตไปแล้ว)");
+  if (mlrt::mode() == mlrt::MODE_TRAIN && (r.kind == lie::Kind::ControlTruth || r.kind == lie::Kind::ControlLie))
+    return replyFail(409, "AUTO_SAVED", "ข้อควบคุมในโหมดเก็บข้อมูลถูกบันทึกให้อัตโนมัติแล้ว");
+  LogMsg tm;
+  const int label = lb == "lie" ? 1 : 0;
+  if (!mlrt::makeTrainRowAs(r, label, tm.text, sizeof(tm.text)))
+    return replyFail(409, "INVALID", "ข้อนี้สัญญาณใช้ไม่ได้ จึงไม่บันทึกเป็นข้อมูลเทรน");
+  snprintf(tm.type, sizeof(tm.type), "TRAIN%d", label);
+  // supervisorTask เป็นผู้เขียนแฟลช (เหมือนโหมดเก็บข้อมูล) — คิวเต็มให้ลองใหม่ ไม่ต้องรอนาน
+  if (xQueueSend(app::logQueue, &tm, pdMS_TO_TICKS(200)) != pdTRUE)
+    return replyFail(503, "BUSY", "นาฬิกากำลังเขียนไฟล์อยู่ ลองกดอีกครั้ง");
+  s_fbSeq[s_fbPos] = seq;
+  s_fbPos = (uint8_t)((s_fbPos + 1) % 8);
+  app::logEvent("ML", "feedback q%u seq %lu -> %s", r.qid, (unsigned long)seq, lb.c_str());
+  replyOk(label ? "บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: โกหก)" : "บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: จริง)");
+}
+
+// POST /api/ml/data/delete?row=&t=&qid=: ลบข้อมูลเทรน 1 แถว (ปุ่มลบในรายการบนมือถือ)
+// row นับจาก 1 = แถวข้อมูลแรก; t และ qid ต้องตรงกับแถวนั้นด้วย กันลบผิดแถวเมื่อไฟล์เปลี่ยนระหว่างนั้น
+void hMlDataDelete() {
+  const long row = server.arg("row").toInt();
+  if (row <= 0 || !server.hasArg("t") || !server.hasArg("qid"))
+    return replyFail(400, "BAD_ROW", "ต้องระบุ row, t และ qid ของแถวที่จะลบ");
+  const int rc = storage::deleteTrainRow((uint32_t)row, server.arg("t").c_str(), server.arg("qid").toInt());
+  if (rc == 1) return replyFail(409, "CHANGED", "แถวนี้ไม่ตรงกับในนาฬิกา (ข้อมูลเพิ่งเปลี่ยน) — โหลดรายการใหม่แล้วลองอีกครั้ง");
+  if (rc != 0) return replyFail(500, "FS", "ระบบไฟล์ผิดพลาด ลบไม่สำเร็จ");
+  app::logEvent("ML", "train row %ld deleted", row);
+  replyOk("ลบแถวนี้แล้ว");
+}
+
 // ---------------- Sleep / WiFi power (ตั้งค่าแบบง่าย) ----------------
 void hSleep() {
   Settings& st = storage::settings();
@@ -685,6 +734,8 @@ void begin() {
   server.on("/api/ml/model/clear", HTTP_POST, W<hMlModelClear>);
   server.on("/api/ml/data.csv", HTTP_GET, W<hMlData>);
   server.on("/api/ml/data/clear", HTTP_POST, W<hMlDataClear>);
+  server.on("/api/ml/data/delete", HTTP_POST, W<hMlDataDelete>);
+  server.on("/api/ml/feedback", HTTP_POST, W<hMlFeedback>);
   server.on("/api/sleep", HTTP_POST, W<hSleep>);
   server.on("/api/wifi", HTTP_POST, W<hWifiPower>);
   server.on("/api/time", HTTP_POST, W<hTime>);

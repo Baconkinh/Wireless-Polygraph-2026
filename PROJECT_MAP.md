@@ -131,6 +131,7 @@ Wireless-Polygraph-2026/
 | `data/studio.db` | store.py | Studio, DBeaver | เซสชัน, ผล, ค่าสด, เหตุการณ์, สำเนารอบเก็บข้อมูล |
 | `data/old_format/` | migrate | ไม่มีใครอ่าน | ต้นฉบับไฟล์รูปแบบเก่า (ไม่ถูกแก้) |
 | `data/migration_log.txt` | migrate | คน | บันทึกการแปลงไฟล์ |
+| `data/trash/` | ปุ่มลบ (data_api → datafiles.trash_file / delete_rows / set_used) | หน้า "ข้อมูล & เทรน AI" การ์ดถังขยะ (กู้คืน) | ไฟล์ที่ลบ + สำเนาก่อนแก้ `result_x.before_<เวลา>.csv` — train.py ไม่อ่าน |
 
 ### 3.5 เครื่องมือ/ทดสอบ
 
@@ -241,7 +242,11 @@ views/use.js เริ่ม (mode live) ──► collector.start() ──► r
 ### 5.5 หน้าเว็บในนาฬิกา (มือถือ ไม่ผ่านคอม)
 ```
 มือถือ ──HTTP 192.168.4.1──► net/web_server.cpp ──► net/web_page.h (HTML) + /api/live, /api/lie/*, /api/ml/*
-ดาวน์โหลด CSV ──GET /api/ml/data.csv──► polygraph_train.csv ──(นำเข้าใน Studio)──► data/result_*.csv
+ดาวน์โหลด CSV ──GET /api/ml/data.csv──► polygraph_train_<วันเวลา>.csv ──(นำเข้าใน Studio)──► data/result_*.csv (source = mobile)
+Studio "ดึงข้อมูลที่นาฬิกาบันทึกเอง" ──GET /api/ml/data.csv──► data/result_*.csv (source = esp_backup)
+ใช้งานจริงบนมือถือ กด ถูก/ผิด ──POST /api/ml/feedback?seq=&label=──► 1 แถวใน /train.csv (supervisorTask เขียน)
+ลบรายแถวบนมือถือ ──POST /api/ml/data/delete?row=&t=&qid=──► storage::deleteTrainRow() (คัดลอกไป /train.tmp แล้ว rename)
+ชุดคำถาม/ถูก-ผิด/ข้อความคำถาม ──► localStorage ของมือถือ (key "pg2") — นาฬิการู้แค่ qid 1000-59999
 ```
 
 ### 5.6 นาฬิกาค้าง / รีบูต

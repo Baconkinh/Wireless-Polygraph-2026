@@ -54,13 +54,13 @@ class RunRecorder:
 
     def __init__(self, data_dir: str, subject: str, operator: str = "", mode: str = "fix",
                  log: Optional[Callable[[str], None]] = None,
-                 on_done: Optional[Callable[[Dict[str, Any]], None]] = None, source: str = "studio"):
+                 on_done: Optional[Callable[[Dict[str, Any]], None]] = None, source: str = "desktop"):
         """เตรียมรอบใหม่ (ยังไม่สร้างไฟล์): ตั้งชื่อรอบจากวันเวลา, กำหนด path ไฟล์ result และ signals"""
         self.data_dir = data_dir
         self.subject = pm.clean_subject(subject)
         self.operator = pm.clean_subject(operator) if operator else "-"
         self.mode = mode if mode in MODES else "fix"
-        self.source = source                          # studio / cli — เขียนลงคอลัมน์ source
+        self.source = source                          # desktop / desktop_cli / desktop_sim — เขียนลงคอลัมน์ source (+ "ที่มา:" ในหมายเหตุ)
         self.run_id = df.new_run_id(data_dir)         # วันเวลาเริ่มรอบ (ไม่ซ้ำกับไฟล์ที่มีอยู่)
         self.t0 = time.time()
         self.log = log or (lambda s: None)

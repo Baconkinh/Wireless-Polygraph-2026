@@ -14,6 +14,7 @@
 #include <time.h>
 #include "esp_attr.h"
 #include "../app.h"
+#include "watchdog.h"
 
 // ---------------- RTC memory ----------------
 // RTC_DATA_ATTR  : ค่าเริ่มต้นถูกโหลดใหม่ทุกครั้งที่บูต "ยกเว้น" ตื่นจาก deep sleep
@@ -383,6 +384,58 @@ bool clearTrain() {
   s_trainTruth = s_trainLie = 0;
   unlockFs();
   return true;
+}
+
+// แถวนี้ตรงกับที่มือถือขอลบไหม: คอลัมน์ 1 (time) และคอลัมน์ 3 (qid) ต้องตรง
+static bool trainLineMatches(const String& line, const char* expectTime, long expectQid) {
+  const int c1 = line.indexOf(',');
+  if (c1 < 0) return false;
+  const int c2 = line.indexOf(',', c1 + 1);
+  const int c3 = c2 < 0 ? -1 : line.indexOf(',', c2 + 1);
+  if (c3 < 0) return false;
+  if (line.substring(0, c1) != expectTime) return false;
+  return line.substring(c2 + 1, c3).toInt() == expectQid;
+}
+
+// ลบ 1 แถวโดยคัดลอกทุกแถวยกเว้นแถวนั้นไปไฟล์ชั่วคราว แล้วเปลี่ยนชื่อทับ (LittleFS rename = แทนที่แบบ atomic
+// ไฟล์เดิมไม่เสียครึ่ง ๆ กลาง ๆ ถ้าไฟดับระหว่างทาง) — ไฟล์ใหญ่สุด 180 KB ใช้เวลาไม่ถึง 1-2 วินาที
+int deleteTrainRow(uint32_t row, const char* expectTime, long expectQid) {
+  if (!s_fsOk) return 2;
+  static const char* const kTmp = "/train.tmp";
+  lockFs();
+  File in = LittleFS.open(kTrainPath, "r");
+  if (!in) { unlockFs(); return 1; }
+  File out = LittleFS.open(kTmp, "w");
+  if (!out) { in.close(); unlockFs(); return 2; }
+  uint32_t idx = 0;          // 0 = หัวตาราง, 1 = แถวข้อมูลแรก (นับเฉพาะบรรทัดที่ไม่ว่าง เหมือนหน้าเว็บ)
+  int removedLabel = -1;
+  bool removed = false;
+  while (in.available()) {
+    String line = in.readStringUntil('\n');
+    if (line.length() == 0) continue;
+    if (!removed && idx == row && row > 0 && trainLineMatches(line, expectTime, expectQid)) {
+      removed = true;
+      int c = 0, i = 0;                                  // คอลัมน์ที่ 4 = label 0/1
+      for (; i < (int)line.length() && c < 3; i++) if (line[i] == ',') c++;
+      if (i < (int)line.length()) removedLabel = line[i] - '0';
+    } else {
+      out.print(line);
+      out.print('\n');
+    }
+    idx++;
+    if ((idx & 31) == 0) wdt::feed();                    // ไฟล์ยาว: ป้อน watchdog ระหว่างทาง
+  }
+  in.close();
+  out.close();
+  if (!removed) { LittleFS.remove(kTmp); unlockFs(); return 1; }
+  if (!LittleFS.rename(kTmp, kTrainPath)) {              // บางเวอร์ชัน rename ทับไฟล์เดิมไม่ได้
+    LittleFS.remove(kTrainPath);
+    if (!LittleFS.rename(kTmp, kTrainPath)) { unlockFs(); return 2; }
+  }
+  if (removedLabel == 0 && s_trainTruth) s_trainTruth--;
+  else if (removedLabel == 1 && s_trainLie) s_trainLie--;
+  unlockFs();
+  return 0;
 }
 
 // อ่านโมเดล AI จาก NVS (ขนาดไม่ตรง = ไม่มีโมเดล)

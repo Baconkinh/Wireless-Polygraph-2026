@@ -12,7 +12,7 @@ export function mount(el) {
   on('session', render);
   on('status', paintBanners);
   on('vitals', paintLive);
-  on('lie', paintReady);
+  on('lie', () => { paintReady(); paintAskButtons(); });
 }
 // กลับมาที่หน้านี้: วาดใหม่
 export function show() { render(); }
@@ -112,11 +112,14 @@ function renderShell() {
           <div id="se-ready" class="small" style="margin-bottom:10px"></div>
           <div class="row">
             <button class="btn primary" id="se-baseline">① วัด Baseline</button>
+            <button class="btn primary" id="se-next" disabled title="ถามข้อแรกที่ยังไม่ได้ถาม (ไม่ต้องวัด baseline ใหม่)">ถามข้อถัดไป ▶</button>
             <button class="btn success sm" id="se-ans-yes" disabled>ตอบ: ใช่</button>
             <button class="btn danger sm" id="se-ans-no" disabled>ตอบ: ไม่ใช่</button>
             <button class="btn ghost sm" id="se-abort" disabled>ยกเลิกข้อนี้</button>
           </div>
           <div id="se-prog" class="small muted" style="margin-top:8px"></div>
+          <div class="small faint" style="margin-top:6px">Baseline วัด<b>ครั้งเดียวต่อผู้ถูกทดสอบ</b> แล้วถามต่อได้เรื่อย ๆ
+            (ถามข้อควบคุม ตอบจริง 1 + สั่งให้โกหก 1 ก่อน เพื่อให้ระบบปรับเกณฑ์ตามคนนั้น) — วัดใหม่เฉพาะตอนเปลี่ยนคน/ถอดนาฬิกา</div>
         </div>
         <div class="card"><h3><svg class=i><use href=#i-list></use></svg> คำถาม <span class="right small muted" id="se-qn"></span></h3>
           <div class="qlist" id="se-qlist"></div>
@@ -149,6 +152,11 @@ function renderShell() {
   $('#se-baseline', root).addEventListener('click', async () => {
     const r = await cmd('baseline', {}); if (r && r.ok) toast('เริ่มวัด baseline — นั่งนิ่ง หายใจปกติ', 'ok');
   });
+  $('#se-next', root).addEventListener('click', () => {
+    const q = nextQuestion();
+    if (!q) return toast('ถามครบทุกข้อแล้ว — เพิ่มคำถามใหม่ด้านล่าง หรือกด "ถามซ้ำ" ที่ข้อที่ต้องการ', 'warn');
+    askQ(q.id);
+  });
   $('#se-ans-yes', root).addEventListener('click', () => post('/api/answer', { yes: true }));
   $('#se-ans-no', root).addEventListener('click', () => post('/api/answer', { yes: false }));
   $('#se-abort', root).addEventListener('click', () => cmd('abort'));
@@ -170,20 +178,41 @@ function paintState() {
   const es = S.live ? S.live.es : (S.lie ? ['idle', 'baseline', 'ready', 'question'].indexOf(S.lie.state) : 0);
   return es;
 }
+// มี baseline ที่ใช้ได้ไหม — ใช้ค่า "bl" จากค่าสด (มาทุก 0.2 วินาที) ก่อน เพราะ S.lie (/api/lie)
+// ถูกดึงใหม่เฉพาะตอนมีเหตุการณ์ จึงอาจเก่ากว่าสถานะจริงได้หลายวินาที
+function baselineOk() {
+  if (S.live && S.live.bl !== undefined) return !!S.live.bl;
+  return !!(S.lie && S.lie.baseline && S.lie.baseline.valid);
+}
+// ข้อแรกที่ยังไม่มีผล (ตามลำดับ) — ใช้กับปุ่ม "ถามข้อถัดไป"
+function nextQuestion() {
+  const qs = (S.session && S.session.questions) || [];
+  return qs.find((q) => !q.result && !q.asked_at) || qs.find((q) => !q.result) || null;
+}
+// เปิด/ปิดปุ่ม "ถาม" ทุกข้อตามสถานะล่าสุด — เรียกทุกครั้งที่ค่าสดเปลี่ยนสถานะ
+// (บั๊กเดิม: ปุ่มถูกคำนวณครั้งเดียวตอนผลเข้ามา ซึ่งตอนนั้นนาฬิกายังอยู่สถานะ "กำลังวัดคำถาม"
+//  ปุ่มจึงค้างเป็นกดไม่ได้ จนผู้ใช้ต้องกดวัด baseline ใหม่ทุกข้อ)
+function paintAskButtons() {
+  if (!root || !$('#se-qlist', root)) return;
+  const es = paintState();
+  const can = baselineOk() && !(es === 1 || es === 3);
+  root.querySelectorAll('#se-qlist button[data-ask]').forEach((b) => { b.disabled = !can; });
+  const nx = $('#se-next', root);
+  if (nx) nx.disabled = !can || !nextQuestion();
+}
 
 // รายการตรวจความพร้อมก่อนถาม (เชื่อมต่อ, สัญญาณ, baseline, ร่างกายกลับสู่ปกติ)
 function paintReady() {
   const el = $('#se-ready', root); if (!el) return;
   const lie = S.lie || {};
-  const bl = lie.baseline || {};
   const cal = lie.calibration || {};
   const items = [];
   items.push(check(S.connected, 'เชื่อมต่อนาฬิกา', 'ยังไม่ได้ต่อ WiFi นาฬิกา'));
-  items.push(check(bl.valid, 'วัด Baseline แล้ว', 'ยังไม่ได้วัด baseline — กดปุ่ม ①'));
+  items.push(check(baselineOk(), 'วัด Baseline แล้ว (ไม่ต้องวัดใหม่ทุกข้อ)', 'ยังไม่ได้วัด baseline — กดปุ่ม ①'));
   items.push(check(cal.active, 'ปรับเกณฑ์เฉพาะบุคคลแล้ว (calibration)',
     cal.weak ? 'ข้อควบคุมแยกจริง/โกหกไม่ชัด — ใช้เกณฑ์มาตรฐาน' : 'ถามคำถามควบคุม จริง+โกหก อย่างละ 1 ข้อเพื่อปรับเกณฑ์', true));
   const settled = S.live && S.live.set;
-  if (bl.valid) items.push(check(settled, 'สัญญาณนิ่ง พร้อมถามข้อต่อไป', 'รอสัญญาณนิ่ง (10–20 วินาที)', true));
+  if (baselineOk()) items.push(check(settled, 'สัญญาณนิ่ง พร้อมถามข้อต่อไป', 'รอสัญญาณนิ่ง (10–20 วินาที)', true));
   el.innerHTML = items.join('');
 }
 // HTML ของ 1 ข้อในรายการตรวจความพร้อม (ผ่าน / เตือน / ไม่ผ่าน)
@@ -197,9 +226,6 @@ function check(ok, okText, badText, warnOnly) {
 function paintQuestions() {
   const s = S.session; if (!s) return;
   const box = $('#se-qlist', root); if (!box) return;
-  const es = paintState();
-  const ready = (S.lie && S.lie.baseline && S.lie.baseline.valid);
-  const busy = es === 1 || es === 3;
   box.innerHTML = '';
   (s.questions || []).forEach((q) => {
     const r = q.result;
@@ -213,12 +239,13 @@ function paintQuestions() {
         h('div', { class: 'hint' }, h('span', { class: `badge ${ki.cls}`, style: 'margin-right:6px' }, ki.th),
           q.hint || '', r ? h('span', { class: `badge ${vi.cls}`, style: 'margin-left:6px' }, `${vi.icon} ${vi.th} ${Math.round((r.p || 0) * 100)}%`) : '')),
       h('div', { class: 'acts' },
-        h('button', { class: 'btn sm primary', disabled: !ready || busy ? true : false,
+        h('button', { class: 'btn sm primary', 'data-ask': String(q.id),
           onclick: () => askQ(q.id) }, r ? 'ถามซ้ำ' : 'ถาม'),
         q.asked_at ? null : h('button', { class: 'btn sm ghost', onclick: () => delQ(q.id), title: 'ลบข้อนี้', html: '<svg class=i><use href=#i-trash></use></svg>' })));
     box.append(card);
   });
   $('#se-qn', root).textContent = `${(s.questions || []).length} ข้อ`;
+  paintAskButtons();
 }
 
 // เริ่มถามข้อที่เลือก
@@ -260,6 +287,8 @@ function paintLive() {
   $('#se-ans-no', root).disabled = es !== 3;
   $('#se-abort', root).disabled = !busy;
   $('#se-baseline', root).disabled = busy;
+  $('#se-baseline', root).textContent = v.bl ? '① วัด Baseline ใหม่ (เปลี่ยนคน)' : '① วัด Baseline';
+  paintAskButtons();
   $('#se-prog', root).textContent = busy ? `${['','baseline','','คำถาม #' + v.eq][es] || ''} ${Math.round((v.ep || 0) * 100)}% (${fmt(v.eel, 0)} วินาที)` : '';
 }
 // ใส่ตัวเลขลงช่องค่าสด 1 ช่อง

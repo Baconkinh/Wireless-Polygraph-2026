@@ -204,7 +204,8 @@ def pull_watch_data(host: str, log: Callable[[str], None] = print) -> Dict:
     tmp = os.path.join(tmpdir, "watch_train.csv")
     try:
         pm.download_csv(host, tmp)
-        rep = df.import_file(DATA, tmp, origin=f"นาฬิกา {host} (/api/ml/data.csv)")
+        rep = df.import_file(DATA, tmp, origin=f"นาฬิกา {host} (/api/ml/data.csv)",
+                              watch_source="esp_backup")
     except Exception as e:  # noqa: BLE001 - แสดงสาเหตุให้ผู้ใช้แก้เอง
         rep = {"ok": False, "msg": f"ดึงข้อมูลจากนาฬิกาไม่ได้ ({e})"}
     finally:

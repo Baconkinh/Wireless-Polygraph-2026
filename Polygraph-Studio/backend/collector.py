@@ -87,6 +87,14 @@ class Collector:
         except Exception:  # noqa: BLE001 - นาฬิกาไม่ตอบตอนนี้ ไม่เป็นไร ใช้วิธีสำรอง
             return (self._seq_max if self._seq_boot == boot else None), boot
 
+    def _source(self) -> str:
+        """ค่าคอลัมน์ source ของรอบนี้: desktop (นาฬิกาจริง) หรือ desktop_sim (นาฬิกาจำลอง — กันข้อมูลปลอมปนตอนเทรน)"""
+        try:
+            sim = bool(self.link and self.link.status().get("simulator"))
+        except Exception:  # noqa: BLE001 - ไม่รู้ = ถือว่าเป็นนาฬิกาจริง
+            sim = False
+        return "desktop_sim" if sim else "desktop"
+
     # ------------------------------------------------------------------ คำสั่งจากหน้าเว็บ
     def start(self, subject: str, operator: str, mode: str) -> Dict[str, Any]:
         """เริ่มรอบใหม่ (ถ้ามีรอบค้างอยู่ จบรอบนั้นก่อน) — ไฟล์ยังไม่ถูกสร้างจนกว่าจะเริ่มข้อแรก"""
@@ -94,7 +102,7 @@ class Collector:
             self.stop()
         self.log_lines = []
         self.rec = RunRecorder(cfgmod.DATA_DIR, subject or "-", operator or "-", mode,
-                               log=self._log, on_done=self._on_done, source="studio")
+                               log=self._log, on_done=self._on_done, source=self._source())
         kind = "ใช้งานจริง" if self.rec.mode == "live" else "เก็บข้อมูล"
         self._log(f"เริ่มรอบ{kind} {self.rec.run_id} — ไฟล์จะถูกสร้างเมื่อเริ่มข้อแรก")
         self.publish()

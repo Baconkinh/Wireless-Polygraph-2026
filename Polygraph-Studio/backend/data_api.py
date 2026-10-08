@@ -40,6 +40,30 @@ class ExcludeIn(BaseModel):
     exclude: bool
 
 
+class FileIn(BaseModel):
+    """body ที่มีแค่ชื่อไฟล์ (ลบไฟล์ / กู้คืนจากถังขยะ)"""
+    name: str
+
+
+class RowKey(BaseModel):
+    """ระบุ 1 ข้อในไฟล์: เลขข้อ + เวลา (คอลัมน์ question_no, time_iso)"""
+    question_no: str
+    time_iso: str = ""
+
+
+class RowsIn(BaseModel):
+    """body ของ POST /api/data/delete_rows"""
+    name: str
+    keys: List[RowKey]
+
+
+class UsedIn(BaseModel):
+    """body ของ POST /api/data/set_used: เปิด/ปิด "ใช้เทรน" รายข้อ"""
+    name: str
+    key: RowKey
+    used: bool
+
+
 class TrainIn(BaseModel):
     """body ของ POST /api/ai/train: ไฟล์ที่ใช้ (ไม่ระบุ = ทุกไฟล์ที่ติ๊ก) + จำนวนข้อขั้นต่ำต่อคลาส"""
     files: Optional[List[str]] = None    # None = ทุกไฟล์ที่ติ๊ก "ใช้เทรน"
@@ -54,6 +78,11 @@ class AutoIn(BaseModel):
 class UploadIn(BaseModel):
     """body ของ POST /api/ai/upload: ไฟล์โมเดลที่จะส่ง"""
     file: str = "model.json"             # "model.json" หรือ "models/model_xxx.json"
+
+
+def _dump(m: BaseModel) -> Dict[str, Any]:
+    """pydantic model -> dict (รองรับทั้ง pydantic v1 และ v2)"""
+    return m.model_dump() if hasattr(m, "model_dump") else m.dict()
 
 
 def _bad(msg: str, code: int = 400) -> JSONResponse:
@@ -111,8 +140,11 @@ def register(app: FastAPI, *, link, hub, sync, collector):
         rows: List[Dict[str, Any]] = []
         for p in paths:
             try:
-                for r in df.read_result_file(p):
+                frows = df.read_result_file(p)
+                first_note = frows[0].get("note", "") if frows else ""
+                for r in frows:
                     r["_file"] = os.path.basename(p)
+                    r["_origin"] = df.origin_of(r, first_note)     # desktop / mobile / esp_backup ...
                     rows.append(r)
             except (OSError, ValueError):
                 continue
@@ -169,6 +201,53 @@ def register(app: FastAPI, *, link, hub, sync, collector):
         publish_files()
         return {"ok": True}
 
+    # ------------------------------------------------------------ ลบ (ย้ายไปถังขยะ data/trash/ กู้คืนได้)
+    def active_file() -> str:
+        """ชื่อไฟล์ของรอบที่กำลังบันทึกอยู่ (ห้ามลบทั้งไฟล์ระหว่างรอบ ไม่งั้นข้อถัดไปจะสร้างไฟล์ใหม่ที่ไม่มีข้อก่อนหน้า)"""
+        rec = collector.rec
+        return os.path.basename(rec.paths["results"]) if rec and rec.files_created else ""
+
+    @app.post("/api/data/delete_file", tags=["data"])
+    async def data_delete_file(body: FileIn):
+        """ลบทั้งไฟล์ = ย้าย result_<รอบ>.csv (+ signals ของรอบนั้น) ไป data/trash/ — ไม่ลบถาวร"""
+        if os.path.basename(body.name) == active_file():
+            return _bad("ไฟล์นี้เป็นของรอบที่กำลังบันทึกอยู่ — กด \"จบรอบ\" ก่อนแล้วค่อยลบ")
+        rep = df.trash_file(DATA, body.name)
+        publish_files()
+        return rep if rep.get("ok") else _bad(rep["msg"], 404)
+
+    @app.post("/api/data/delete_rows", tags=["data"])
+    async def data_delete_rows(body: RowsIn):
+        """ลบบางข้อออกจากไฟล์ (สำรองไฟล์ทั้งไฟล์ไว้ในถังขยะก่อนแก้)"""
+        if not _result_path(body.name):
+            return _bad("ไม่พบไฟล์นี้", 404)
+        rep = df.delete_rows(DATA, body.name, [_dump(k) for k in body.keys])
+        publish_files()
+        return rep if rep.get("ok") else _bad(rep["msg"])
+
+    @app.post("/api/data/set_used", tags=["data"])
+    async def data_set_used(body: UsedIn):
+        """เปิด/ปิด "ใช้เทรน" ของข้อเดียว (แก้คอลัมน์ used_for_training ให้ ไม่ต้องเปิดไฟล์เอง)"""
+        if not _result_path(body.name):
+            return _bad("ไม่พบไฟล์นี้", 404)
+        rep = df.set_used(DATA, body.name, _dump(body.key), body.used)
+        publish_files()
+        return rep if rep.get("ok") else _bad(rep["msg"])
+
+    @app.get("/api/data/trash", tags=["data"])
+    async def data_trash():
+        """รายการในถังขยะ (ไฟล์ที่ลบ + สำเนาก่อนแก้)"""
+        return {"ok": True, "items": df.list_trash(DATA)}
+
+    @app.post("/api/data/restore", tags=["data"])
+    async def data_restore(body: FileIn):
+        """กู้ไฟล์จากถังขยะกลับไปที่ data/ (ถ้าชื่อเดิมยังมีอยู่ ไฟล์ปัจจุบันจะถูกเก็บเข้าถังขยะแทน)"""
+        if active_file() and body.name.startswith(active_file()[:-4]):
+            return _bad("ไฟล์นี้เป็นของรอบที่กำลังบันทึกอยู่ — จบรอบก่อน")
+        rep = df.restore_file(DATA, body.name)
+        publish_files()
+        return rep if rep.get("ok") else _bad(rep["msg"], 404)
+
     @app.post("/api/data/import", tags=["data"])
     async def data_import(file: UploadFile = File(...)):
         """นำเข้าไฟล์ CSV (เช่น polygraph_train.csv ที่ดาวน์โหลดจากหน้าเว็บนาฬิกา หรือ results_ รุ่นเก่า)
@@ -208,7 +287,8 @@ def register(app: FastAPI, *, link, hub, sync, collector):
         try:
             with open(tmp, "w", encoding="utf-8", newline="") as fh:
                 fh.write(text)
-            rep = df.import_file(DATA, tmp, origin="นาฬิกา (/api/ml/data.csv)")
+            rep = df.import_file(DATA, tmp, origin="นาฬิกา (/api/ml/data.csv)",
+                                 watch_source="esp_backup")
         except ValueError as e:
             rep = {"ok": False, "msg": str(e)}
         finally:

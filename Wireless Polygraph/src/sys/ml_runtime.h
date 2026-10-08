@@ -31,6 +31,9 @@ const char* subject();
 
 // สร้างแถว CSV ของข้อมูลเทรนจากผลคำถาม (คืน false ถ้าข้อนี้ไม่ควรเก็บ)
 bool makeTrainRow(const lie::Result& r, char* out, size_t n, int& label);
+// สร้างแถว CSV โดย "ระบุเฉลยเอง" (label 0 = จริง, 1 = โกหก) — ใช้กับโหมดใช้งานจริงบนมือถือ
+// ที่ผู้ใช้บอกหลังได้ผลว่านาฬิกาตอบถูก/ผิด (POST /api/ml/feedback)
+bool makeTrainRowAs(const lie::Result& r, int label, char* out, size_t n);
 
 void appendJson(Json& j);                      // สำหรับ GET /api/ml
 

@@ -138,6 +138,9 @@ bool appendTrain(const char* csvLine, int label);    // label 0 = จริง, 
 void trainCounts(uint32_t& truth, uint32_t& lie);
 size_t trainBytes();
 bool clearTrain();
+// ลบแถวที่ row (1 = แถวข้อมูลแรก ไม่นับหัวตาราง) — ต้องมีเวลา (คอลัมน์ time) และ qid ตรงด้วย
+// กันลบผิดแถวถ้าไฟล์ถูกเพิ่มข้อระหว่างที่มือถือแสดงรายการ  คืน 0 = ลบแล้ว, 1 = ไม่พบ/ไม่ตรง, 2 = ระบบไฟล์ผิดพลาด
+int deleteTrainRow(uint32_t row, const char* expectTime, long expectQid);
 constexpr size_t TRAIN_MAX = 180 * 1024;              // กันพื้นที่ LittleFS เต็ม (~1,300 ข้อ)
 
 // ---- โมเดล AI (NVS namespace "ml") ----

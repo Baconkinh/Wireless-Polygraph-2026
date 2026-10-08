@@ -42,7 +42,8 @@ Z_COLS = ["z_" + s for s in pm.SIGNALS]                     # เปลี่ย
 RESULT_HEADER = [
     "time_iso",          # เวลาที่บันทึกข้อนี้ (เวลาคอม)
     "run_id",            # รหัสรอบ = วันเวลาเริ่มรอบ (ตรงกับชื่อไฟล์)
-    "source",            # มาจากไหน: studio / cli / watch / legacy
+    "source",            # มาจากไหน: desktop / desktop_cli / desktop_sim / mobile / esp_backup / legacy
+                         # (ไฟล์ก่อน 9 ต.ค. 2026 อาจเป็น studio / cli / watch — ดู origin_of())
     "subject",           # ผู้ตอบ (ผู้ถูกทดสอบ)
     "operator",          # ผู้ถาม
     "question_no",       # ข้อที่เท่าไรในรอบ (1, 2, 3 ...)
@@ -67,6 +68,50 @@ assert FEATURE_COLS == pm.FEATURES
 
 DECIDED_BY = {0: "rules", 1: "rules_calibrated", 2: "ai_model"}
 LABELS = ("truth", "lie")
+
+# ============================================================ แหล่งที่มาของข้อมูล (คอลัมน์ source + note)
+# ข้อมูลเข้ามาได้ 3 ทางหลัก ตามรูปที่ใช้อธิบายระบบ:
+#   desktop    : Studio บนคอม (127.0.0.1:8000) สั่งนาฬิกาถามแล้วบันทึกเอง  -> แม่นที่สุด มีค่าสดครบ
+#   mobile     : เก็บผ่านหน้าเว็บนาฬิกาบนมือถือ (192.168.4.1) แล้วกด "ดาวน์โหลด CSV" ได้ polygraph_train.csv
+#                แล้วนำไฟล์นั้นมา "นำเข้าไฟล์ CSV" ที่หน้า ข้อมูล & เทรน AI
+#   esp_backup : ข้อมูลชุดเดียวกับ mobile แต่ Studio ดึงตรงจากหน่วยความจำนาฬิกา (/api/ml/data.csv)
+#                = สำรองที่บอร์ดเก็บไว้เอง (ใช้เมื่อไม่ได้ดาวน์โหลดจากมือถือ)
+ORIGIN_TH = {
+    "desktop": "desktop (Studio บนคอม)",
+    "desktop_cli": "desktop (collect_data.bat)",
+    "desktop_sim": "desktop (นาฬิกาจำลอง — ไม่ใช่ข้อมูลคนจริง)",
+    "mobile": "mobile (หน้าเว็บนาฬิกาบนมือถือ)",
+    "esp_backup": "esp_backup (ดึงจากหน่วยความจำนาฬิกา)",
+    "legacy": "desktop (Studio รุ่นเก่า)",
+    "import": "นำเข้าจากไฟล์อื่น",
+}
+
+
+def origin_of(row: Dict[str, Any], file_note: str = "") -> str:
+    """แหล่งที่มาของ 1 แถว (desktop / desktop_cli / desktop_sim / mobile / esp_backup / legacy)
+    ไฟล์รุ่นก่อนใช้ค่า studio / cli / watch -> แปลงให้ตอนแสดงผล "โดยไม่แก้ไฟล์เดิม"
+    watch แยกไม่ได้จากคอลัมน์ source -> ดูหมายเหตุของไฟล์ (file_note = note ของแถวแรก) ว่านำเข้าจากไหน
+      polygraph_train*.csv = ไฟล์ที่มือถือดาวน์โหลด -> mobile
+      /api/ml/data.csv, watch_train_* = ดึงจากนาฬิกาด้วยคอม -> esp_backup"""
+    s = str(row.get("source") or "")
+    if s in ORIGIN_TH:
+        return s
+    if s == "studio":
+        return "desktop"
+    if s == "cli":
+        return "desktop_cli"
+    if s == "watch":
+        n = (str(row.get("note") or "") + " " + (file_note or "")).lower()
+        return "mobile" if "polygraph_train" in n else "esp_backup"
+    return s or "-"
+
+
+def with_origin(note: str, source: str) -> str:
+    """เติม "ที่มา: ..." ไว้หน้าหมายเหตุ (ผู้ใช้ขอให้เห็นแหล่งที่มาในคอลัมน์ note ด้วย ไม่ต้องเปิดคอลัมน์ source)"""
+    tag = "ที่มา: " + ORIGIN_TH.get(source, source)
+    if not note:
+        return tag
+    return note if note.startswith("ที่มา:") else f"{tag} | {note}"
 
 # หัวไฟล์รูปแบบเก่า (ไว้ตรวจว่าไฟล์เป็นแบบไหน)
 V1_RESULT_KEYS = {"time_iso", "run_id", "question_no", "watch_qid", "label", "verdict", "used_for_training"}
@@ -211,11 +256,15 @@ def row_from_result(r: Dict[str, Any], *, run_id: str, source: str, subject: str
         "decided_by": DECIDED_BY.get(int(src), str(src)) if _num(src) is not None else "",
         "quality": r.get("quality", r.get("q", "")), "reasons": r.get("reasons", r.get("rs", "")),
         "ok_mask": ok_mask if has else "", "gsr_ok": int(x["gsr_ok"]) if x else "",
-        "ppg_ok": int(x["ppg_ok"]) if x else "", "note": note,
+        "ppg_ok": int(x["ppg_ok"]) if x else "", "note": with_origin(note, source),
     }
     for c in D_COLS + Z_COLS:
         row[c] = _fmt(x[c]) if x else ""
     row["used_for_training"] = decide_used(row)
+    if source == "desktop_sim" and row["used_for_training"]:
+        # ข้อมูลจากนาฬิกาจำลองไม่ใช่สัญญาณคนจริง -> ไม่ให้ปนตอนเทรน (แก้เป็น 1 เองได้ถ้าต้องการทดลอง)
+        row["used_for_training"] = 0
+        row["note"] += " | ข้อมูลจำลอง ไม่ใช้เทรน"
     return row
 
 
@@ -363,21 +412,24 @@ def mark_stale(rows: List[Dict[str, Any]], earlier: List[Dict[str, Any]], window
     return n
 
 
-def convert_watch_rows(rows: List[Dict[str, str]], run_id: str) -> List[Dict[str, Any]]:
-    """แปลงแถวข้อมูลเทรนจากนาฬิกา (/train.csv, polygraph_train.csv, watch_train_*.csv) เป็นรูปแบบ result"""
+def convert_watch_rows(rows: List[Dict[str, str]], run_id: str, source: str = "watch") -> List[Dict[str, Any]]:
+    """แปลงแถวข้อมูลเทรนจากนาฬิกา (/train.csv, polygraph_train.csv, watch_train_*.csv) เป็นรูปแบบ result
+    source = mobile (ไฟล์ที่มือถือดาวน์โหลดแล้วนำเข้า) / esp_backup (คอมดึงจากนาฬิกาเอง)
+             / watch (ไฟล์เก่าที่ไม่รู้ว่ามาทางไหน — ใช้ตอนแปลงไฟล์รุ่นเก่าเท่านั้น)"""
     out = []
     for i, r in enumerate(rows, 1):
         lab = {"0": "truth", "1": "lie"}.get(r.get("label", "").strip(), r.get("label_name", "unknown"))
         ep = _num(r.get("time"))
         src = _num(r.get("source"))
         row = {
-            "time_iso": iso(ep) if ep and ep > 1.6e9 else "", "run_id": run_id, "source": "watch",
+            "time_iso": iso(ep) if ep and ep > 1.6e9 else "", "run_id": run_id, "source": source,
             "subject": pm.clean_subject(r.get("subject", "")), "operator": "-", "question_no": i,
             "watch_qid": r.get("qid", ""), "mode": "watch", "question_text": "", "label": lab, "feedback": "",
             "verdict": "", "p_lie": r.get("p_model", ""),
             "decided_by": DECIDED_BY.get(int(src), "") if src is not None else "",
             "quality": r.get("quality", ""), "reasons": "", "ok_mask": "",
-            "gsr_ok": r.get("gsr_ok", ""), "ppg_ok": r.get("ppg_ok", ""), "note": "",
+            "gsr_ok": r.get("gsr_ok", ""), "ppg_ok": r.get("ppg_ok", ""),
+            "note": with_origin("", source) if source in ORIGIN_TH else "",
         }
         for c in D_COLS + Z_COLS:
             row[c] = r.get(c, "")
@@ -386,8 +438,9 @@ def convert_watch_rows(rows: List[Dict[str, str]], run_id: str) -> List[Dict[str
     return out
 
 
-def read_result_file(path: str) -> List[Dict[str, Any]]:
-    """อ่านไฟล์ใดก็ได้ที่รู้จัก แล้วคืนเป็นแถวรูปแบบ result (แปลงให้อัตโนมัติถ้าเป็นแบบเก่า)"""
+def read_result_file(path: str, watch_source: str = "watch") -> List[Dict[str, Any]]:
+    """อ่านไฟล์ใดก็ได้ที่รู้จัก แล้วคืนเป็นแถวรูปแบบ result (แปลงให้อัตโนมัติถ้าเป็นแบบเก่า)
+    watch_source = ค่า source ที่จะใส่ถ้าไฟล์เป็นข้อมูลจากนาฬิกา (mobile / esp_backup)"""
     header, rows = read_csv(path)
     kind = detect_format(header)
     if kind == "result":
@@ -396,7 +449,7 @@ def read_result_file(path: str) -> List[Dict[str, Any]]:
         return convert_v1_rows(rows)[0]
     if kind == "watch_train":
         m = re.search(r"(\d{8}_\d{6})", os.path.basename(path))
-        return convert_watch_rows(rows, m.group(1) if m else "watch")
+        return convert_watch_rows(rows, m.group(1) if m else "watch", watch_source)
     raise ValueError(f"{os.path.basename(path)} ไม่ใช่ไฟล์ผลรายข้อ (รูปแบบ: {kind})")
 
 
@@ -447,6 +500,7 @@ def summarize(path: str) -> Dict[str, Any]:
         rows=len(rows), labels=cnt, used=sum(1 for _ in training_rows(rows)),
         subjects=sorted({r.get("subject", "-") for r in rows}), modes=sorted({r.get("mode", "") for r in rows} - {""}),
         sources=sorted({r.get("source", "") for r in rows} - {""}),
+        origins=sorted({origin_of(r, rows[0].get("note", "")) for r in rows}),
         first=rows[0].get("time_iso", "") if rows else "", last=rows[-1].get("time_iso", "") if rows else "",
         correct=fb.count("correct"), wrong=fb.count("wrong"), fb_unknown=fb.count("unknown"),
         stale=sum(1 for r in rows if str(r.get("note", "")).startswith("stale")),
@@ -507,19 +561,25 @@ def import_rows(data_dir: str, rows: List[Dict[str, Any]], origin: str, t: Optio
                 "msg": f"ไม่มีข้อใหม่ (ซ้ำกับที่มีอยู่แล้ว {dup} ข้อ) — ไม่ได้สร้างไฟล์"}
     rid = new_run_id(data_dir, t)
     for r in new:
-        if r.get("source") == "watch" or not r.get("run_id"):
+        if r.get("source") in ("watch", "mobile", "esp_backup") or not r.get("run_id"):
             r["run_id"] = rid
-    if not any(r.get("note") for r in new):
-        new[0]["note"] = f"นำเข้าจาก {origin}"
+    # หมายเหตุแถวแรก = ไฟล์นี้มาจากไหน (origin_of() ใช้ข้อความนี้แยก mobile / esp_backup ของไฟล์รุ่นเก่า)
+    tag = f"นำเข้าจาก {origin}"
+    if tag not in str(new[0].get("note") or ""):
+        new[0]["note"] = (str(new[0].get("note")) + " | " if new[0].get("note") else "") + tag
     path = result_path(data_dir, rid)
     write_rows(path, new)
     return {"ok": True, "added": len(new), "duplicates": dup, "file": os.path.basename(path),
             "msg": f"เพิ่ม {len(new)} ข้อ ลงไฟล์ {os.path.basename(path)}" + (f" (ข้ามข้อซ้ำ {dup})" if dup else "")}
 
 
-def import_file(data_dir: str, path: str, origin: Optional[str] = None) -> Dict[str, Any]:
-    """นำเข้าไฟล์ CSV ที่ได้มาจากที่อื่น (ดาวน์โหลดจากหน้าเว็บนาฬิกา / results_ รุ่นเก่า / ไฟล์ของเพื่อน)"""
-    rows = read_result_file(path)
+def import_file(data_dir: str, path: str, origin: Optional[str] = None,
+                watch_source: str = "mobile") -> Dict[str, Any]:
+    """นำเข้าไฟล์ CSV ที่ได้มาจากที่อื่น (ดาวน์โหลดจากหน้าเว็บนาฬิกา / results_ รุ่นเก่า / ไฟล์ของเพื่อน)
+    watch_source: ไฟล์ข้อมูลจากนาฬิกาที่ผู้ใช้อัปโหลดเอง = mobile (มือถือดาวน์โหลดมา),
+                  ที่ Studio ดึงจากนาฬิกาเอง = esp_backup
+    ไฟล์ result_*.csv จากเครื่องอื่นคงค่า source เดิมไว้ (แหล่งที่มาจริงของข้อนั้น)"""
+    rows = read_result_file(path, watch_source)
     return import_rows(data_dir, rows, origin or os.path.basename(path))
 
 
@@ -644,7 +704,7 @@ def migrate(data_dir: str, log: Callable[[str], None] = print, dry_run: bool = F
         # ตั้งชื่อไฟล์ตามเวลาดาวน์โหลด (อยู่ในชื่อไฟล์) ถ้าไม่มีใช้เวลาของข้อแรก แล้วค่อยเวลาแก้ไขไฟล์
         t = (time.mktime(time.strptime(m.group(1), "%Y%m%d_%H%M%S")) if m
              else first if first and first > 1.6e9 else os.path.getmtime(path))
-        conv = convert_watch_rows(rows, "")
+        conv = convert_watch_rows(rows, "", "mobile" if n.startswith("polygraph_train") else "esp_backup")
         _note_watch_rows(conv, v1)
         if dry_run:
             note(f"{n}: {len(conv)} ข้อจากนาฬิกา (จะตัดข้อซ้ำตอนแปลงจริง)")
@@ -695,6 +755,167 @@ def migrate(data_dir: str, log: Callable[[str], None] = print, dry_run: bool = F
             with open(os.path.join(data_dir, "migration_log.txt"), "a", encoding="utf-8") as fh:
                 fh.write(f"=== {iso()} ===\n" + "\n".join(rep["notes"] + rep["moved"]) + "\n")
     return rep
+
+
+# ============================================================ ลบข้อมูลแบบกู้คืนได้ (ถังขยะ data/trash/)
+# หลัก: ปุ่ม "ลบ" บนหน้าเว็บ "ไม่ลบถาวร" — ย้ายไฟล์ไปไว้ data/trash/ (train.py ไม่อ่านโฟลเดอร์ย่อย)
+# และก่อนแก้เนื้อหาไฟล์ (ลบรายข้อ / เปลี่ยนใช้เทรน) จะสำรองไฟล์ทั้งไฟล์ไว้ในถังขยะก่อนทุกครั้ง
+# อยากลบถาวรจริง ๆ ให้ลบโฟลเดอร์ data/trash/ เองใน File Explorer
+TRASH_DIR = "trash"
+
+
+def _stamp() -> str:
+    """เวลาปัจจุบันแบบใส่ในชื่อไฟล์ได้ เช่น 20261009_013000"""
+    return time.strftime("%Y%m%d_%H%M%S")
+
+
+def _backup_path(tdir: str, name: str) -> str:
+    """ชื่อสำเนาในถังขยะที่ "ไม่ชนของเดิม" เช่น result_x.before_20261009_013000.csv
+    (แก้ 2 ครั้งในวินาทีเดียว -> เติม _1, _2 ... ไม่งั้นสำเนาแรกจะถูกเขียนทับ)"""
+    base = os.path.join(tdir, name[:-4] + f".before_{_stamp()}")
+    path, i = base + ".csv", 1
+    while os.path.exists(path):
+        path, i = f"{base}_{i}.csv", i + 1
+    return path
+
+
+def trash_file(data_dir: str, name: str) -> Dict[str, Any]:
+    """ย้าย result_<รอบ>.csv (และ signals_<รอบ>.csv ของรอบเดียวกัน) ไปถังขยะ — กู้คืนได้ด้วย restore_file()"""
+    name = os.path.basename(name)
+    src = os.path.join(data_dir, name)
+    if not is_result_name(name) or not os.path.isfile(src):
+        return {"ok": False, "msg": "ไม่พบไฟล์นี้"}
+    tdir = os.path.join(data_dir, TRASH_DIR)
+    dst = _move(src, tdir)
+    moved = [os.path.basename(dst)]
+    sig = os.path.join(data_dir, SIGNALS_DIR, "signals_" + name[len("result_"):])
+    if os.path.isfile(sig):
+        moved.append("signals/" + os.path.basename(_move(sig, os.path.join(tdir, SIGNALS_DIR))))
+    ex = load_exclude(data_dir)
+    if name in ex:
+        save_exclude(data_dir, [n for n in ex if n != name])
+    return {"ok": True, "moved": moved,
+            "msg": f"ย้าย {name} ไปถังขยะแล้ว (data/{TRASH_DIR}/) — กู้คืนได้จากรายการถังขยะ"}
+
+
+def list_trash(data_dir: str) -> List[Dict[str, Any]]:
+    """ไฟล์ในถังขยะ: ไฟล์ที่ถูกลบทั้งไฟล์ (result_*.csv) และสำเนาก่อนแก้ (result_*.before_*.csv)"""
+    tdir = os.path.join(data_dir, TRASH_DIR)
+    out = []
+    try:
+        names = sorted(os.listdir(tdir), reverse=True)
+    except OSError:
+        return out
+    for n in names:
+        p = os.path.join(tdir, n)
+        if not (os.path.isfile(p) and n.startswith("result_") and n.endswith(".csv")):
+            continue
+        m = re.match(r"^(result_\d{8}_\d{6})(?:_\d+)?(?:\.before_(\d{8}_\d{6})(?:_\d+)?)?\.csv$", n)
+        if not m:
+            continue
+        try:
+            rows = len(read_result_file(p))
+        except (OSError, ValueError):
+            rows = 0
+        out.append({"name": n, "original": m.group(1) + ".csv", "backup_of_edit": bool(m.group(2)),
+                    "edited_at": m.group(2) or "", "rows": rows, "bytes": os.path.getsize(p),
+                    "mtime": os.path.getmtime(p)})
+    return out
+
+
+def restore_file(data_dir: str, trash_name: str) -> Dict[str, Any]:
+    """กู้ไฟล์จากถังขยะกลับไปที่ data/ ด้วยชื่อเดิม
+    ถ้าชื่อเดิมยังมีอยู่ (เช่น กู้สำเนาก่อนแก้) -> ไฟล์ปัจจุบันถูกย้ายเข้าถังขยะแทน (สลับกัน ไม่มีอะไรหาย)"""
+    trash_name = os.path.basename(trash_name)
+    item = next((x for x in list_trash(data_dir) if x["name"] == trash_name), None)
+    if not item:
+        return {"ok": False, "msg": "ไม่พบไฟล์นี้ในถังขยะ"}
+    tdir = os.path.join(data_dir, TRASH_DIR)
+    dst = os.path.join(data_dir, item["original"])
+    swapped = ""
+    if os.path.exists(dst):
+        cur = _backup_path(tdir, item["original"])
+        shutil.move(dst, cur)
+        swapped = f" (ไฟล์ที่ใช้อยู่ถูกเก็บเป็น {os.path.basename(cur)} ในถังขยะ)"
+    shutil.move(os.path.join(tdir, trash_name), dst)
+    sig_name = "signals_" + item["original"][len("result_"):]
+    sig = os.path.join(tdir, SIGNALS_DIR, sig_name)
+    if not item["backup_of_edit"] and os.path.isfile(sig) and not os.path.exists(
+            os.path.join(data_dir, SIGNALS_DIR, sig_name)):
+        os.makedirs(os.path.join(data_dir, SIGNALS_DIR), exist_ok=True)
+        shutil.move(sig, os.path.join(data_dir, SIGNALS_DIR, sig_name))
+    return {"ok": True, "msg": f"กู้คืน {item['original']} แล้ว" + swapped}
+
+
+def _rewrite(data_dir: str, name: str, change: Callable[[List[Dict[str, Any]]], int]) -> Dict[str, Any]:
+    """แก้เนื้อหาไฟล์ result อย่างปลอดภัย: สำเนาไฟล์เดิมเข้าถังขยะก่อน -> แก้ -> เขียนไฟล์ชั่วคราว -> สลับชื่อ
+    (ไฟล์ไม่มีวันเสียครึ่ง ๆ กลาง ๆ ถ้าไฟดับระหว่างเขียน) change() คืนจำนวนแถวที่เปลี่ยน"""
+    name = os.path.basename(name)
+    path = os.path.join(data_dir, name)
+    if not is_result_name(name) or not os.path.isfile(path):
+        return {"ok": False, "msg": "ไม่พบไฟล์นี้"}
+    header, _ = read_csv(path)
+    if detect_format(header) != "result":
+        return {"ok": False, "msg": "ไฟล์นี้ไม่ใช่รูปแบบ result มาตรฐาน — แก้จากหน้าเว็บไม่ได้"}
+    rows = read_result_file(path)
+    n = change(rows)
+    if n == 0:
+        return {"ok": True, "changed": 0, "msg": "ไม่มีอะไรเปลี่ยน"}
+    tdir = os.path.join(data_dir, TRASH_DIR)
+    os.makedirs(tdir, exist_ok=True)
+    backup = _backup_path(tdir, name)
+    shutil.copy2(path, backup)
+    tmp = path + ".tmp"
+    write_rows(tmp, rows)
+    os.replace(tmp, path)
+    return {"ok": True, "changed": n, "backup": os.path.basename(backup), "rows_left": len(rows)}
+
+
+def _match(r: Dict[str, Any], key: Dict[str, Any]) -> bool:
+    """แถวนี้คือข้อที่หน้าเว็บเลือกไหม (เทียบเลขข้อ + เวลา เพราะเลขข้ออาจซ้ำในไฟล์ที่นำเข้า)"""
+    return (str(r.get("question_no")) == str(key.get("question_no"))
+            and str(r.get("time_iso") or "") == str(key.get("time_iso") or ""))
+
+
+def delete_rows(data_dir: str, name: str, keys: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """ลบบางข้อออกจากไฟล์ (สำรองไฟล์เดิมไว้ในถังขยะก่อน) — ลบจนหมดไฟล์ = ย้ายทั้งไฟล์ไปถังขยะ"""
+    def change(rows):
+        before = len(rows)
+        rows[:] = [r for r in rows if not any(_match(r, k) for k in keys)]
+        return before - len(rows)
+    res = _rewrite(data_dir, name, change)
+    if res.get("ok") and res.get("changed") and res.get("rows_left") == 0:
+        trash_file(data_dir, name)
+        res["msg"] = f"ลบ {res['changed']} ข้อ — ไฟล์ว่างแล้วจึงย้ายไปถังขยะ"
+    elif res.get("ok") and res.get("changed"):
+        res["msg"] = f"ลบ {res['changed']} ข้อแล้ว (สำเนาก่อนลบ: trash/{res['backup']})"
+    return res
+
+
+def set_used(data_dir: str, name: str, key: Dict[str, Any], used: bool) -> Dict[str, Any]:
+    """เปิด/ปิด "ใช้เทรน" รายข้อ (แทนการเปิดไฟล์แก้ used_for_training เอง)
+    เปิดได้เฉพาะข้อที่รู้เฉลย truth/lie และ feature ครบ (ไม่งั้น train.py ก็ข้ามอยู่ดี)"""
+    def change(rows):
+        n = 0
+        for r in rows:
+            if not _match(r, key):
+                continue
+            if used and (r.get("label") not in LABELS or any(_num(r.get(c)) is None for c in FEATURE_COLS)):
+                raise ValueError("ข้อนี้ใช้เทรนไม่ได้ (ไม่รู้เฉลย หรือไม่มีค่าสัญญาณครบ)")
+            want = "1" if used else "0"
+            if str(r.get("used_for_training")) != want:
+                r["used_for_training"] = want
+                tag = "ผู้ใช้ตั้งไม่ใช้เทรน" if not used else "ผู้ใช้ตั้งให้ใช้เทรน"
+                r["note"] = (str(r.get("note")) + " | " if r.get("note") else "") + tag
+                n += 1
+        return n
+    try:
+        res = _rewrite(data_dir, name, change)
+    except ValueError as e:
+        return {"ok": False, "msg": str(e)}
+    if res.get("ok") and res.get("changed"):
+        res["msg"] = "ใช้ข้อนี้เทรน" if used else "ไม่ใช้ข้อนี้เทรนแล้ว (ข้อมูลยังอยู่ในไฟล์)"
+    return res
 
 
 def model_info(path: str) -> Optional[Dict[str, Any]]:

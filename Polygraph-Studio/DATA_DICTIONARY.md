@@ -135,7 +135,7 @@
 |---|---|
 | `time_iso` | เวลาที่บันทึกข้อนี้ (เวลาคอม) |
 | `run_id` | รหัสรอบ = วันเวลาเริ่มรอบ (ตรงกับชื่อไฟล์) |
-| `source` | มาจากไหน: `studio` (หน้าเว็บ), `cli` (collect_data.bat), `watch` (นาฬิกาบันทึกเอง), `legacy` (แปลงจากไฟล์เก่า) |
+| `source` | มาจากไหน: `desktop` (Studio บนคอม), `desktop_cli` (collect_data.bat), `desktop_sim` (นาฬิกาจำลอง — ตั้ง used_for_training = 0 ให้), `mobile` (polygraph_train*.csv ที่มือถือดาวน์โหลดแล้วนำเข้า), `esp_backup` (Studio/train.py ดึงจากหน่วยความจำนาฬิกาตรง), `legacy` (แปลงจากไฟล์เก่า) — ไฟล์ก่อน 9 ต.ค. 2026 อาจเป็น `studio`/`cli`/`watch` ซึ่งหน้าเว็บแปลงให้ตอนแสดง (ไม่แก้ไฟล์เดิม) และแถวใหม่มี `ที่มา: ...` นำหน้าคอลัมน์ `note` ด้วย |
 | `subject`, `operator` | ผู้ตอบ / ผู้ถาม |
 | `question_no`, `watch_qid` | ข้อที่เท่าไรในรอบ / qid ที่ส่งให้นาฬิกา (ดูข้อ 1) |
 | `mode` | fix / manual / live / watch / legacy (ดูข้อ 1) |

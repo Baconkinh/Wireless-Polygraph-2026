@@ -100,7 +100,7 @@ class Collector:
         self.window_sec = 12.0
         self.max_seq = 0                  # seq ของผลล่าสุดที่นาฬิกาส่งมา (กันจับคู่ผลเก่า)
         self.boot = None                  # เลขบูตของนาฬิกา (seq เริ่มนับใหม่เมื่อรีบูต)
-        self.rec = RunRecorder(DATA, a.subject, a.operator, a.mode, log=lambda s: print("   " + s), source="cli")
+        self.rec = RunRecorder(DATA, a.subject, a.operator, a.mode, log=lambda s: print("   " + s), source="desktop_cli")
         self.progress_shown = False
 
     # ------------------------------------------------------------ UDP (ค่าสด + เหตุการณ์)
@@ -249,7 +249,7 @@ class Collector:
             tmp = os.path.join(tempfile.mkdtemp(), "watch_train.csv")
             try:
                 pm.download_csv(self.http, tmp)
-                print("   " + df.import_file(DATA, tmp, origin="นาฬิกา (/api/ml/data.csv)")["msg"])
+                print("   " + df.import_file(DATA, tmp, origin="นาฬิกา (/api/ml/data.csv)", watch_source="esp_backup")["msg"])
             except Exception as e:  # noqa: BLE001 - แสดงสาเหตุให้ผู้ใช้
                 print("   ดึงข้อมูลไม่ได้:", e)
         elif k == "h":

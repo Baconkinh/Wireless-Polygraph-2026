@@ -108,6 +108,12 @@ bool makeTrainRow(const lie::Result& r, char* out, size_t n, int& label) {
   if (r.kind == lie::Kind::ControlTruth) label = 0;
   else if (r.kind == lie::Kind::ControlLie) label = 1;
   else return false;                                   // เก็บเฉพาะข้อที่รู้เฉลย
+  return makeTrainRowAs(r, label, out, n);
+}
+
+// ผล 1 ข้อ + เฉลยที่ผู้ใช้ระบุ -> 1 บรรทัด CSV (รูปแบบเดียวกับ makeTrainRow ทุกคอลัมน์)
+bool makeTrainRowAs(const lie::Result& r, int label, char* out, size_t n) {
+  if (label != 0 && label != 1) return false;
   if (r.verdict == lie::Verdict::Invalid) return false; // สัญญาณเสีย ไม่เอามาสอน AI
   float x[ml::FEAT_COUNT];
   ml::extract(r, x);

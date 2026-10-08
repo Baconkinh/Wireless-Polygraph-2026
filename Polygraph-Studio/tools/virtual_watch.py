@@ -119,6 +119,7 @@ class VirtualWatch:
         self.ml_subject = "-"
         self.auto_qid = 1
         self.train_lines: List[str] = []          # แทนไฟล์ /train.csv ใน LittleFS
+        self.fb_seqs: List[int] = []              # seq ที่ส่ง feedback ไปแล้ว (กันแถวซ้ำ เหมือน s_fbSeq ในเฟิร์มแวร์)
         self.model: Optional[pm.Model] = None
         self.model_info: Dict[str, Any] = {}
         self.reset_state()
@@ -848,6 +849,41 @@ def make_app(vw: VirtualWatch) -> FastAPI:
             return fail(400, "NEED_CONFIRM", "ข้อมูลเทรนจะหายทั้งหมด! เพิ่ม confirm=yes")
         vw.train_lines = []
         return ok("ล้างข้อมูลเทรนแล้ว")
+
+    @app.post("/api/ml/feedback")
+    async def ml_feedback(seq: int = 0, label: str = ""):
+        """POST /api/ml/feedback: โหมดใช้งานจริงบนมือถือ บอกเฉลยหลังได้ผล -> 1 แถวข้อมูลเทรน (เหมือนเฟิร์มแวร์)"""
+        if label not in ("truth", "lie"):
+            return fail(400, "BAD_LABEL", "label ต้องเป็น truth หรือ lie")
+        if seq in vw.fb_seqs:
+            return fail(409, "DUPLICATE", "ข้อนี้บันทึกไปแล้ว")
+        r = next((x for x in vw.engine.res if x.seq == seq), None)
+        if r is None:
+            return fail(404, "NO_RESULT", "ไม่พบผลข้อนี้ในนาฬิกา (เก่าเกิน 24 ข้อ หรือนาฬิการีบูตไปแล้ว)")
+        j = r.to_json()
+        if vw.settings["mode"] == 1 and j["kind"] in ("truth", "lie"):
+            return fail(409, "AUTO_SAVED", "ข้อควบคุมในโหมดเก็บข้อมูลถูกบันทึกให้อัตโนมัติแล้ว")
+        if j["verdict"] == "invalid":
+            return fail(409, "INVALID", "ข้อนี้สัญญาณใช้ไม่ได้ จึงไม่บันทึกเป็นข้อมูลเทรน")
+        lab = 1 if label == "lie" else 0
+        row = pm.train_row(pm.features_from(r.okMask, r.z, r.feat), epoch=int(time.time()), subject=vw.ml_subject,
+                           qid=r.qid, label=lab, quality=r.quality, p_model=r.pLie, source=r.source)
+        vw.train_lines.append(",".join(row))
+        vw.fb_seqs = (vw.fb_seqs + [seq])[-8:]
+        return ok("บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: " + ("โกหก" if lab else "จริง") + ")")
+
+    @app.post("/api/ml/data/delete")
+    async def ml_data_delete(row: int = 0, t: str = "", qid: int = -1):
+        """POST /api/ml/data/delete: ลบข้อมูลเทรน 1 แถว (row นับจาก 1, t และ qid ต้องตรง)"""
+        if row <= 0:
+            return fail(400, "BAD_ROW", "ต้องระบุ row, t และ qid ของแถวที่จะลบ")
+        if row > len(vw.train_lines):
+            return fail(409, "CHANGED", "แถวนี้ไม่ตรงกับในนาฬิกา (ข้อมูลเพิ่งเปลี่ยน) — โหลดรายการใหม่แล้วลองอีกครั้ง")
+        f = vw.train_lines[row - 1].split(",")
+        if f[0] != t or int(f[2]) != qid:
+            return fail(409, "CHANGED", "แถวนี้ไม่ตรงกับในนาฬิกา (ข้อมูลเพิ่งเปลี่ยน) — โหลดรายการใหม่แล้วลองอีกครั้ง")
+        del vw.train_lines[row - 1]
+        return ok("ลบแถวนี้แล้ว")
 
     @app.post("/api/sleep")
     async def sleep_(request: Request):
