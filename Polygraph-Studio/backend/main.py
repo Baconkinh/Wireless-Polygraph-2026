@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, UploadFile, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -160,12 +160,35 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
         }
 
     # ------------------------------------------------------------ หน้าเว็บ + WebSocket
+    # ---- กันเบราว์เซอร์ใช้ไฟล์หน้าเว็บรุ่นเก่า (cache busting) ----
+    # ปัญหาที่เจอจริง: อัปเดต Studio แล้วเบราว์เซอร์ยังใช้ home.js รุ่นเก่าที่ import session.js (ถูกลบแล้ว)
+    # -> "Failed to fetch dynamically imported module" ทั้งที่ไฟล์บนดิสก์ถูกต้อง
+    # วิธีแก้: ใส่ "เลขรุ่นของไฟล์หน้าเว็บ" ลงใน URL (/v/<build>/assets/...) — build คิดจากเวลาแก้ไขไฟล์ทุกไฟล์ใน frontend/
+    # แก้ไฟล์ไหน + เปิด Studio ใหม่ = URL ใหม่ทั้งชุด เบราว์เซอร์จึงต้องโหลดใหม่หมด (import ภายในเป็น relative path
+    # จึงได้เลขรุ่นเดียวกันอัตโนมัติ)
+    def _frontend_build() -> str:
+        """เลขรุ่นสั้น ๆ จากเวลาแก้ไขล่าสุดของไฟล์ใน frontend/ (ไม่รวม vendor)"""
+        newest = 0.0
+        for dp, _dn, fn in os.walk(cfgmod.FRONTEND_DIR):
+            for f in fn:
+                try:
+                    newest = max(newest, os.path.getmtime(os.path.join(dp, f)))
+                except OSError:
+                    pass
+        return format(int(newest), "x")
+
+    build = _frontend_build()
+    assets_dir = os.path.join(cfgmod.FRONTEND_DIR, "assets")
+
     @app.get("/", include_in_schema=False)
     async def index():
-        """หน้าเว็บหลักของ Studio (frontend/index.html)"""
-        return FileResponse(os.path.join(cfgmod.FRONTEND_DIR, "index.html"))
+        """หน้าเว็บหลักของ Studio (frontend/index.html) — เปลี่ยน /assets/ เป็น /v/<build>/assets/ ก่อนส่ง"""
+        with open(os.path.join(cfgmod.FRONTEND_DIR, "index.html"), encoding="utf-8") as fh:
+            html = fh.read().replace('"/assets/', f'"/v/{build}/assets/')
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
-    app.mount("/assets", StaticFiles(directory=os.path.join(cfgmod.FRONTEND_DIR, "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    app.mount(f"/v/{build}/assets", StaticFiles(directory=assets_dir), name="assets_v")
 
     @app.middleware("http")
     async def no_stale_frontend(request, call_next):
@@ -174,7 +197,7 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
         ทำไม: เบราว์เซอร์เคยจำ index.html/main.js รุ่นเก่าไว้ หลังอัปเดต Studio จึงยังเห็นเมนู/หน้าเก่า"""
         resp = await call_next(request)
         p = request.url.path
-        if p == "/" or p.startswith("/assets/"):
+        if (p == "/" or p.startswith("/assets/") or p.startswith("/v/")) and "cache-control" not in resp.headers:
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 

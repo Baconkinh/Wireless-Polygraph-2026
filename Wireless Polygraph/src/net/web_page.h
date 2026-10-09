@@ -377,8 +377,10 @@ function render(){
  // ปุ่มเลือกวิธีตัดสิน (mu = ตัดสินด้วยโมเดลจริงไหม; เฟิร์มแวร์เก่าไม่มี mu -> ดูจาก ml)
  const ai=L.mu!=null?!!L.mu:!!L.ml;
  document.querySelectorAll('#dec button').forEach(b=>b.classList.toggle('on',(b.dataset.u==='1')===ai));
- $('decHint').textContent=ai?'ตอนนี้: โมเดล AI คำนวณ P(โกหก) = sigmoid(b + ผลรวม w×ค่าที่ปรับสเกล) จาก 12 ค่า'
-  :'ตอนนี้: สูตรมาตรฐาน คำนวณจาก z-score 5 สัญญาณถ่วงน้ำหนัก'+(L.cal?' + เกณฑ์ที่ปรับจากข้อควบคุมของคนนี้':'')+(L.ml?' (โมเดลยังเก็บอยู่ กดสลับกลับได้)':'');
+ // บอกให้ชัดว่า "ตอนนี้ใช้อะไรตัดสิน" (ผู้ใช้เคยงงว่าโมเดล "ติดตั้งแล้ว" แต่ "ไม่ได้ใช้" แปลว่าอะไร)
+ $('decHint').innerHTML=ai?'<b>ตอนนี้นาฬิกาตัดสินด้วย: โมเดล AI</b> — P(โกหก) = sigmoid(b + ผลรวม w×ค่าที่ปรับสเกล) จาก 12 ค่า'
+  :'<b>ตอนนี้นาฬิกาตัดสินด้วย: สูตรมาตรฐาน</b> — z-score 5 สัญญาณถ่วงน้ำหนัก'+(L.cal?' + เกณฑ์ที่ปรับจากข้อควบคุมของคนนี้':'')
+   +(L.ml?'<br>โมเดล AI ยังเก็บอยู่ในนาฬิกา แต่ไม่ได้ถูกใช้ — กด "โมเดล AI" เพื่อสลับกลับได้ทันที':'');
 
  // สถานะ engine: 0 ยังไม่วัด, 1 กำลังวัดค่าปกติ, 2 พร้อม, 3 กำลังถาม
  const es=L.es,p=Math.round((L.ep||0)*100);
@@ -618,7 +620,7 @@ async function loadMl(){
   if(document.activeElement!==$('subj'))$('subj').value=M.subject&&M.subject!=='-'?M.subject:'';
   const m=M.model;
   $('mlInfo').innerHTML=m.loaded
-   ?'<div class="kv"><span>สถานะ</span><b style="color:var(--tru)">ติดตั้งแล้ว'+(M.use===false?' (ไม่ได้ใช้ — เลือกสูตรมาตรฐานอยู่)':' ใช้ตัดสินอยู่')+'</b></div>'+
+   ?'<div class="kv"><span>โมเดลในนาฬิกา</span>'+(M.use===false?'<b style="color:var(--mut)">มีเก็บไว้ แต่ไม่ได้ใช้ตัดสิน</b>':'<b style="color:var(--tru)">มีและใช้ตัดสินอยู่</b>')+'</div>'+
     '<div class="kv"><span>ชื่อโมเดล</span><span>'+esc(m.name)+'</span></div>'+
     '<div class="kv"><span>ความแม่นยำจาก cross-validation</span><span>'+Math.round(m.accuracy*100)+'%'+(m.accuracy<0.6?' (ยังต่ำ แนะนำใช้สูตรมาตรฐาน)':'')+'</span></div>'+
     '<div class="kv"><span>จำนวนข้อมูลที่ใช้เทรน</span><span>'+m.samples+' ข้อ</span></div>'+
