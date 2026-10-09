@@ -58,7 +58,7 @@
   ],
   "b": -0.166925,
   "lambda": 10.0,
-  "name": "lr-20261009-124601",
+  "name": "lr-20261009-123233",
   "cv_accuracy": 0.4905,
   "cv_method": "leave-one-subject-out",
   "cv_ci95": [
@@ -91,7 +91,7 @@
     "วิว",
     "เทส"
   ],
-  "trained_at": 1791524761,
+  "trained_at": 1791523953,
   "source_files": [
     "result_20261007_203055.csv",
     "result_20261007_212215.csv",

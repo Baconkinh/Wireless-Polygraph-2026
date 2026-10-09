@@ -1,0 +1,11 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-09 12:20:13.642,20261009_121953,desktop,view,gemini,1,600,fix,,truth,,truth,0.316,ai_model,98,0,31,1,1,1,0.0179,-11.7238,0.0296,0.0049,0.3706,0.3,-0.95,-1.08,-1.17,4.6,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:20:32.565,20261009_121953,desktop,view,gemini,2,601,fix,,truth,,truth,0.269,ai_model,92,0,31,1,1,1,0.0018,33.37,0.315,-0.372,0.268,-0.03,0.3,0.73,-17.19,3,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:20:49.434,20261009_121953,desktop,view,gemini,3,602,fix,,lie,,inconclusive,0.396,ai_model,96,0,31,1,1,1,0.0009,41.75,0.143,0.003,0.256,-0.04,0.53,-0.36,-1.25,2.81,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:21:05.706,20261009_121953,desktop,view,gemini,4,603,fix,,lie,,truth,0.289,ai_model,75,1,30,0,1,1,0,61.99,0.438,-0.02,0.445,0,1.09,1.5,-2.24,5.76,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:21:22.815,20261009_121953,desktop,view,gemini,5,604,fix,,lie,,inconclusive,0.35,ai_model,70,1,30,0,1,1,0,41.87,0.186,-0.002,0.28,0,0.53,-0.09,-1.46,3.19,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:21:37.463,20261009_121953,desktop,view,gemini,6,605,fix,,truth,,truth,0.303,ai_model,70,1,30,0,1,1,0,-27.15,0.084,-0.004,0.186,0,-1.38,-0.73,-1.55,1.72,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:21:56.508,20261009_121953,desktop,view,gemini,7,606,fix,,truth,,truth,0.241,ai_model,70,1,30,0,1,1,0,2.51,0.151,-0.003,0.441,0,-0.56,-0.31,-1.51,5.69,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:22:12.408,20261009_121953,desktop,view,gemini,8,607,fix,,lie,,truth,0.311,ai_model,70,1,30,0,1,1,0,8.11,0.244,-0.006,0.253,0,-0.4,0.28,-1.64,2.76,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:22:27.912,20261009_121953,desktop,view,gemini,9,608,fix,,lie,,inconclusive,0.376,ai_model,70,1,30,0,1,1,0,4.16,0.04,-0.005,0.12,0,-0.51,-1.02,-1.6,0.68,ที่มา: desktop (Studio บนคอม)
+2026-10-09 12:22:43.425,20261009_121953,desktop,view,gemini,10,609,fix,,truth,,truth,0.325,ai_model,70,1,30,0,1,1,0,0.51,0.154,-0.005,0.209,0,-0.61,-0.29,-1.61,2.07,ที่มา: desktop (Studio บนคอม)
