@@ -5,8 +5,8 @@ import { S, on } from './store.js';
 import { connectWS } from './ws.js';
 import { $, $$, fmt, toast, STATE_TH, vinfo } from './ui.js';
 
-const TITLES = { home: 'Wireless Polygraph · ใช้งานจริง', collect: 'เก็บข้อมูลเทรน AI', data: 'ข้อมูล & เทรน AI',
-  results: 'ผลลัพธ์ & รายงาน',
+// หน้าแรก (home) = ใช้งานจริง — หน้า "Wireless Polygraph" แบบเซสชัน และ "ผลลัพธ์ & รายงาน" ถูกเอาออก 9 ต.ค. 2026
+const TITLES = { home: 'ใช้งานจริง', collect: 'เก็บข้อมูลเทรน AI', data: 'ข้อมูล & เทรน AI',
   system: 'ระบบ & อุปกรณ์', guide: 'คู่มือ & หลักการ' };
 const views = {};          // name -> module (หรือ fallback)
 let current = 'home';
@@ -52,7 +52,8 @@ async function loadView(name) {
 // เปลี่ยนหน้า: เน้นเมนู, แสดง section ของหน้านั้น, โหลดโมดูลหน้า (ครั้งแรก), เรียก show()/hide()
 async function show(name) {
   // หน้า "ทดสอบ" (session) และ "ใช้งานจริง" (use) เดิม ถูกรวมเป็นหน้าหลักแล้ว — ลิงก์เก่ายังพามาที่หน้าหลัก
-  if (name === 'session' || name === 'use') name = 'home';
+  // ลิงก์เก่า (#session, #use, #results) พามาหน้าแรก = ใช้งานจริง
+  if (name === 'session' || name === 'use' || name === 'results') name = 'home';
   if (!TITLES[name]) name = 'home';
   current = name;
   $$('#nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));

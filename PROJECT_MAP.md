@@ -99,11 +99,10 @@ Wireless-Polygraph-2026/
 | `assets/js/charts.js` | กราฟเส้นเรียลไทม์, คลื่นชีพจร (canvas), เกจโอกาสโกหก | `widgets.js`, views |
 | `assets/js/widgets.js` | ช่องค่าสด 6 ช่อง + กราฟ 4 กราฟ (ใช้ซ้ำหลายหน้า) | home, collect, use |
 | `assets/js/history.js` | การ์ด "ประวัติทั้งหมด" อ่านทุก `result_*.csv` + ดาวน์โหลดไฟล์เดียว/รวม | `GET /api/data/rows`, `/api/data/merged.csv` |
-| `assets/js/views/home.js` | หน้าหลัก "Wireless Polygraph" = ฝัง `use.js` ทั้งหน้า + การ์ดพลังงาน + ผู้จัดทำ (ส่วนเซสชัน/ควบคุมด่วนเดิมถูกเอาออก 9 ต.ค. 2026; `session.js` ถูกลบ) | `use.js`, `/api/watch/command` |
+| `assets/js/views/home.js` | หน้าแรก (เมนู "ใช้งานจริง") = ฝัง `use.js` ทั้งหน้า + การ์ดพลังงาน + ผู้จัดทำ (หน้า "Wireless Polygraph" แบบเซสชันและหน้า "ผลลัพธ์ & รายงาน" ถูกเอาออก 9 ต.ค. 2026; `session.js`, `results.js` ถูกลบ) | `use.js`, `/api/watch/command` |
 | `assets/js/views/use.js` | ส่วน **ใช้งานจริง** (อยู่ในหน้าหลัก ไม่มีเมนูแยกแล้ว): ถาม → ผล → ถูก/ผิด/ไม่ทราบ, **เลือกตัดสินด้วย โมเดล AI / สูตรมาตรฐาน**, ความแม่นยำรอบนี้ | `/api/collect/*` (mode live), `/api/ai`, `POST /api/ai/use` → นาฬิกา `POST /api/ml/use` |
 | `assets/js/views/collect.js` | หน้า **"เก็บข้อมูลเทรน AI"** (fix/manual, นับถอยหลัง, รายละเอียด qid/ไฟล์) + ประวัติทั้งหมด | `/api/collect/*` |
 | `assets/js/views/data.js` | หน้า **"ข้อมูล & เทรน AI"**: ไฟล์, ติ๊กใช้เทรน, รวม/นำเข้า/ดึงจากนาฬิกา, ปุ่มเทรน, โมเดลคอม↔นาฬิกา | `backend/data_api.py` |
-| `assets/js/views/results.js` | หน้า "ผลลัพธ์ & รายงาน": ประวัติเซสชัน, ดาวน์โหลด CSV/JSON, เปิดรายงาน | `/api/sessions`, `/report/<id>` |
 | `assets/js/views/system.js` | หน้า "ระบบ & อุปกรณ์": บูต/watchdog, หน่วยความจำ/แฟลช, task, พลังงาน, OTA, ค่าตั้ง LieEngine, ปุ่มนาฬิกาจำลอง | `/api/watch/system`, `/api/watch/config`, `/api/watch/ota` |
 | `assets/js/views/guide.js` | หน้า "คู่มือ & หลักการ" | — |
 

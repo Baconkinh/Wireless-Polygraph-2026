@@ -189,7 +189,7 @@ Studio 2.3 แก้แล้ว: จำเลข `seq` ของผลล่า
 
 ---
 
-## 5. ไฟล์ที่ดาวน์โหลดจากหน้า "ผลลัพธ์ & รายงาน"
+## 5. ไฟล์ของ "เซสชันทดสอบ" รุ่นก่อน (หน้า "ผลลัพธ์ & รายงาน" ถูกเอาออกแล้ว — ยังดาวน์โหลดได้ทาง `/api/sessions/<id>/results.csv`, `/api/sessions/<id>/samples.csv`, `/report/<id>`)
 
 - `session<id>_results.csv` — 1 แถว/คำถามในเซสชัน: `order, watch_qid, question, kind, answer, verdict, p_lie, ...` (feature เหมือนข้อ 3)
 - `session<id>_signals.csv` — สัญญาณตลอดเซสชัน: `time_local, phase, question_order, watch_qid, question_kind` + คอลัมน์สัญญาณ (ชื่อเดียวกับข้อ 2)

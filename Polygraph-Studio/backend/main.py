@@ -167,6 +167,17 @@ def create_app(settings: Optional[cfgmod.Settings] = None) -> FastAPI:
 
     app.mount("/assets", StaticFiles(directory=os.path.join(cfgmod.FRONTEND_DIR, "assets")), name="assets")
 
+    @app.middleware("http")
+    async def no_stale_frontend(request, call_next):
+        """ให้เบราว์เซอร์ถาม Studio ทุกครั้งว่าไฟล์หน้าเว็บเปลี่ยนไหม (Cache-Control: no-cache)
+        ไม่เปลี่ยน = ตอบ 304 เร็วเหมือนเดิม, เปลี่ยน = ได้ไฟล์ใหม่ทันที
+        ทำไม: เบราว์เซอร์เคยจำ index.html/main.js รุ่นเก่าไว้ หลังอัปเดต Studio จึงยังเห็นเมนู/หน้าเก่า"""
+        resp = await call_next(request)
+        p = request.url.path
+        if p == "/" or p.startswith("/assets/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
         """WebSocket /ws: ส่งข้อมูลสดให้หน้าเว็บตลอดเวลาที่เปิดอยู่"""
