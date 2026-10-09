@@ -47,6 +47,8 @@ void drainLogsToFlash() {
 }
 
 // light sleep: หยุดเซนเซอร์/WiFi, หลับจนกดปุ่ม (หรือครบเวลา) แล้วเปิดทุกอย่างกลับ
+// [เทคนิค: Light sleep + GPIO wake-up] CPU หยุด RAM ยังอยู่ (ค่า baseline ไม่หาย) ปลุกด้วยปุ่ม BOOT (GPIO9 = LOW)
+//   หรือ timer; ปิด WiFi AP ก่อนเพราะ AP รักษาการเชื่อมต่อขณะหลับไม่ได้ และหยุด HW watchdog ชั่วคราว
 void doLightSleep(uint32_t maxSec) {
   app::logEvent("SLEEP", "light sleep (wake: BOOT button%s)", maxSec ? " or timer" : "");
   drainLogsToFlash();
@@ -92,6 +94,8 @@ void doLightSleep(uint32_t maxSec) {
   ui::blink(1);
 }
 
+// [เทคนิค: Deep sleep + timer wake-up + RTC memory] ปิดเกือบทั้งชิป (เหลือ RTC) ตื่นมาคือบูตใหม่
+//   ก่อนหลับ: เขียน log ค้าง, สั่งเซนเซอร์เข้าโหมดประหยัด, จดเหตุผลใน RTC_DATA_ATTR
 [[noreturn]] void doDeepSleep(uint32_t sec, uint8_t reason) {
   const Settings& st = storage::settings();
   if (reason == SLP_STANDBY && sec == 0) sec = st.wakeCheckS;
@@ -144,6 +148,7 @@ void handleWakeEarly() {
 void begin() { setEco(storage::settings().eco); }
 
 // โหมด ECO: ลด CPU เหลือ 80 MHz + หรี่ LED (ประหยัดไฟ)
+// [เทคนิค: Dynamic frequency scaling] ECO = CPU 80 MHz แทน 160 MHz -> กระแสลดลง งานยังทันเพราะใช้ CPU ไม่ถึง 10%
 void setEco(bool on) {
   s_eco = on;
   setCpuFrequencyMhz(on ? CPU_MHZ_ECO : CPU_MHZ_NORMAL);
@@ -175,6 +180,8 @@ void requestRestart(uint32_t plannedReason) {
 }
 
 // supervisor เรียกเป็นระยะ: ทำคำขอที่ค้าง, หลับอัตโนมัติเมื่อไม่มีใครใช้, ตรวจแบตต่ำ
+// [เทคนิค: Battery protection + auto-standby] แบตต่ำต่อเนื่อง 10 s -> เตือน; ต่ำวิกฤต -> deep sleep ปกป้อง Li-Po
+//   ไม่มีใครใช้เกินเวลาที่ตั้ง -> standby (deep sleep แล้วตื่นมาเช็คการแตะเป็นระยะ)
 void service() {
   const uint32_t now = millis();
 

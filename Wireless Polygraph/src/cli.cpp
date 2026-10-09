@@ -382,6 +382,7 @@ void cmdWifi(int argc, char** argv) {
 }
 
 // แยกคำในบรรทัดคำสั่ง แล้วเรียกฟังก์ชันของคำสั่งนั้น (ไม่รู้จัก = แนะนำให้พิมพ์ help)
+// [เทคนิค: UART command-line interface] แยกคำสั่งที่พิมพ์ใน Serial Monitor (เช่น status, boots, wifi low) แล้วเรียกฟังก์ชัน
 void execute(char* line) {
   char* argv[4] = {nullptr, nullptr, nullptr, nullptr};
   int argc = 0;

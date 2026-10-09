@@ -23,6 +23,8 @@ class WatchError(Exception):
     pass
 
 
+# [เทคนิค: UDP client (asyncio DatagramProtocol)] รับค่าสด/คลื่น/เหตุการณ์จากนาฬิกาทาง UDP พอร์ต 4210
+#   ส่ง "hello" ทุกไม่กี่วินาทีให้นาฬิกาจำว่าส่งข้อมูลมาที่คอมเครื่องนี้ + นับแพ็กเก็ตหายจากเลข seq
 class WatchLink(asyncio.DatagramProtocol):
     """การเชื่อมต่อกับนาฬิกา 1 เครื่อง: UDP (ค่าสด 5 ครั้ง/วินาที, คลื่น PPG, เหตุการณ์) + HTTP (สั่งงาน/อ่านค่าตั้ง)
     ทุกข้อมูลที่ได้ส่งต่อให้ listener (sessions.Interrogation) ซึ่งกระจายต่อไปหน้าเว็บ/ไฟล์/ฐานข้อมูล
@@ -195,6 +197,8 @@ class WatchLink(asyncio.DatagramProtocol):
         self.schedule_lie_sync()
 
     # ------------------------------------------------------------------ lie sync
+    # [เทคนิค: Reliability บน UDP] ผลคำถามสำคัญ -> ทุกครั้งที่เลข rv เปลี่ยน ดึง /api/lie ทาง HTTP (TCP) มาเทียบซ้ำ
+    #   UDP หล่นได้ แต่ผลจะไม่หาย
     def schedule_lie_sync(self):
         if self._lie_task and not self._lie_task.done():
             self._lie_again = True

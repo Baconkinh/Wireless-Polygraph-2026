@@ -81,6 +81,8 @@ void readPpg(uint32_t now) {
 }
 
 // อ่าน ADC ของ NTC, GSR, แบต (เฉลี่ยหลายครั้งลด noise) แล้วแปลงเป็นหน่วยจริง
+// [เทคนิค: ADC + voltage divider] อ่าน NTC (อุณหภูมิผิว), GSR (ความนำไฟฟ้าผิว), แบต/2 ด้วย ADC 12 บิต + oversampling 16 ครั้ง
+//   แล้วแปลงแรงดันเป็นหน่วยจริงด้วยสูตรวงจรแบ่งแรงดัน (drivers/sensor_math.cpp)
 void readAnalog() {
   s_ntcMv = analog::readMv(PIN_NTC, ADC_OVERSAMPLE);
   s_gsrMv = analog::readMv(PIN_GSR, ADC_OVERSAMPLE);
@@ -152,6 +154,7 @@ void publishFrame(uint32_t now) {
 }
 
 // ตรวจสุขภาพเซนเซอร์: ชิปเงียบนาน = กู้บัส I2C, ตั้งธงเตือน (สายหลุด, แผ่น GSR ลัด, แบตอ่อน)
+// [เทคนิค: Fault tolerance — I2C bus recovery] ชิปเงียบเกินเวลา = บัสค้าง -> ส่ง clock 9 ลูก + STOP แล้วเริ่มชิปใหม่
 void checkHealth(uint32_t now) {
   const Settings& st = storage::settings();
   // ชิปเคยตอบแต่เงียบไปนาน -> บัสค้าง/สายหลวม -> กู้บัส (เว้นระยะ 10 s กันวนรัว)
@@ -206,6 +209,8 @@ bool begin() {
 }
 
 // 1 รอบของ sensorTask (ทุก 10 ms จาก hardware timer): อ่าน MPU ทุกรอบ, PPG/ADC ตามรอบ, ส่งเฟรมทุก 200 ms
+// [เทคนิค: Multi-rate sampling] ถูกเรียก 100 Hz จาก timer: MPU6050 ทุกรอบ (100 Hz), PPG อ่าน FIFO ทุกรอบ,
+//   ADC ทุก 10 รอบ (10 Hz), ส่งเฟรมให้ LieEngine ทุก 20 รอบ (5 Hz), ตรวจสุขภาพเซนเซอร์ทุก 50 รอบ
 void tick() {
   s_tick++;
   const uint32_t now = millis();

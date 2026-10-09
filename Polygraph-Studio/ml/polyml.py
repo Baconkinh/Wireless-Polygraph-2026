@@ -155,6 +155,7 @@ def _solve(A: List[List[float]], b: List[float]) -> List[float]:
     return x
 
 
+# [เทคนิค: Machine learning — Logistic Regression + L2 regularization, Newton's method (IRLS)] เขียนเองด้วย Python ล้วน
 def fit_logreg(Z: List[List[float]], y: List[int], lam: float = 1.0, iters: int = 60) -> Tuple[float, List[float]]:
     """Logistic regression ด้วย Newton's method (IRLS) บนข้อมูลที่ standardize แล้ว
 
@@ -247,6 +248,7 @@ def stratified_folds(y: List[int], k: int, seed: int = 7) -> List[List[int]]:
     return [f for f in folds if f]
 
 
+# [เทคนิค: Leave-one-subject-out CV] ≥ 3 คน -> ทดสอบกับ "คนที่โมเดลไม่เคยเห็น" (ไม่งั้น stratified k-fold)
 def cv_splits(ds: Dataset, k: int = 5) -> Tuple[str, List[List[int]]]:
     """leave-one-subject-out ถ้ามี ≥3 คน (วัดความแม่นยำกับ "คนใหม่"), ไม่งั้น stratified k-fold"""
     subs = sorted(set(ds.subject))
@@ -275,6 +277,7 @@ def metrics(y: List[int], p: List[float], thr: float = 0.5) -> dict:
             "confusion": {"tp": tp, "fn": fn, "fp": fp, "tn": tn}}
 
 
+# [เทคนิค: Wilson score interval] ช่วงเชื่อมั่น 95% ของความแม่นยำ (บอกความไม่แน่นอนเมื่อข้อมูลน้อย)
 def wilson(k: int, n: int, z: float = 1.96) -> Tuple[float, float]:
     """ช่วงความเชื่อมั่น 95% ของสัดส่วน (Wilson score interval) — ข้อมูลน้อย ช่วงจะกว้าง"""
     if n == 0:
@@ -289,6 +292,7 @@ def wilson(k: int, n: int, z: float = 1.96) -> Tuple[float, float]:
 LAMBDAS = [0.1, 0.3, 1.0, 3.0, 10.0]
 
 
+# [เทคนิค: Nested cross-validation] เลือก λ จากชุดเทรนเท่านั้น -> ความแม่นยำที่รายงานไม่ถูก "โกง" ด้วยชุดทดสอบ
 def choose_lambda(X, y, features, idx: List[int], k: int = 4) -> float:
     """เลือก lam ด้วย CV ภายในชุดเทรนเท่านั้น (nested CV — ไม่แอบดูชุดทดสอบ)"""
     yy = [y[i] for i in idx]

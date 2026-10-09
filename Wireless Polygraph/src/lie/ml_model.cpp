@@ -39,6 +39,7 @@ void extract(const lie::Result& r, float out[FEAT_COUNT]) {
 }
 
 // CRC32 ของโมเดล — ใช้ตรวจว่าโมเดลใน NVS ไม่เสีย
+// [เทคนิค: Data integrity — CRC32] ตรวจโมเดลที่เก็บใน NVS ว่าไม่เสีย/ไม่ถูกแก้ ก่อนเอามาใช้ (ไม่ตรง = ไม่ใช้)
 static uint32_t crc32(const uint8_t* p, size_t n) {
   uint32_t c = 0xFFFFFFFFu;
   while (n--) {
@@ -77,6 +78,8 @@ bool valid(const Model& m) {
 //   4) sigmoid(z) = 1 / (1 + e^-z) แปลงคะแนนเป็นความน่าจะเป็น 0-1 = p(โกหก)
 //   ใช้ double ตอนบวกสะสม (ESP32-C3 ไม่มี FPU double แต่ 12 ครั้งต่อข้อเร็วพอ) และตัดที่ ±30 กัน exp ล้น
 //   LieEngine นำ p ไปเทียบเกณฑ์ lieP/truthP ต่อ -> โกหก / จริง / ไม่แน่ชัด
+// [เทคนิค: On-device ML inference — Logistic Regression] P = 1/(1+e^−(b + Σ w·(x−mean)/scale)) ใช้ float บน MCU
+//   ไม่ต้องต่อคอมตอนใช้งาน (edge inference)
 float predict(const Model& m, const lie::Result& r) {
   float x[FEAT_COUNT];
   extract(r, x);

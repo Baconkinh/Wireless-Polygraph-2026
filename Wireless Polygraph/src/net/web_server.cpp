@@ -160,6 +160,7 @@ void liveJson(Json& j) {
   j.kv("eco", (app::bits() & EV_ECO) ? 1 : 0);
   j.kv("md", (int)mlrt::mode());
   j.kv("ml", mlrt::hasModel() ? 1 : 0);
+  j.kv("mu", mlrt::modelActive() ? 1 : 0);   // 1 = ผลข้อต่อไปตัดสินด้วยโมเดล AI, 0 = สูตรมาตรฐาน
   j.kv("sby", (int)storage::settings().standbyMin);
   j.kv("wp", (int)storage::settings().wifiPower);
   j.end();
@@ -269,6 +270,7 @@ void emitEvent(const char* ev, const char* extra) {
 }
 
 // ---------------- handlers ----------------
+// [เทคนิค: Embedded web page ใน PROGMEM/แฟลช] หน้าเว็บทั้งหน้าเป็น string ในเฟิร์มแวร์ (net/web_page.h) ส่งตรงจากแฟลช
 void hRoot() { server.send_P(200, "text/html", INDEX_HTML); }
 
 // GET /api/info: ข้อมูลเครื่อง
@@ -279,6 +281,7 @@ void hInfo() {
 }
 
 // GET /api/live: ค่าสด
+// [เทคนิค: HTTP REST API (WebServer)] GET /api/live ตอบ JSON ค่าสด — หน้าเว็บมือถือเรียกทุก 1 วินาที
 void hLive() {
   Json j(900);
   liveJson(j);
@@ -557,6 +560,8 @@ void hMlModelClear() {
 }
 
 // GET /api/ml/data.csv: ส่งไฟล์ /train.csv ทีละ 1 KB (ไม่ถือ mutex ระหว่างส่ง กัน watchdog)
+// [เทคนิค: Chunked streaming + mutex แบบสั้น] ส่งไฟล์ทีละ 1 KB ถือ fsMutex เฉพาะตอนอ่าน ไม่ถือระหว่างส่ง WiFi
+//   (กัน supervisor รอ mutex นานจน Task WDT รีเซ็ต)
 void hMlData() {
   if (!storage::fsOk()) return replyFail(500, "FS", "ระบบไฟล์ใช้งานไม่ได้");
   size_t size = 0;
@@ -634,6 +639,17 @@ void hMlFeedback() {
   s_fbPos = (uint8_t)((s_fbPos + 1) % 8);
   app::logEvent("ML", "feedback q%u seq %lu -> %s", r.qid, (unsigned long)seq, lb.c_str());
   replyOk(label ? "บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: โกหก)" : "บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: จริง)");
+}
+
+// POST /api/ml/use?on=1|0: เลือกให้ตัดสินด้วยโมเดล AI (1) หรือสูตรมาตรฐาน (0) — โมเดลไม่ถูกลบ
+void hMlUse() {
+  if (!server.hasArg("on")) return replyFail(400, "BAD_VALUE", "ต้องระบุ on=1 (โมเดล AI) หรือ on=0 (สูตรมาตรฐาน)");
+  const bool on = server.arg("on").toInt() != 0;
+  mlrt::setUseModel(on);
+  app::logEvent("ML", "decide by %s", on ? "AI model" : "rules");
+  emitEvent("decider", on ? "\"use\":1" : "\"use\":0");
+  if (on && !mlrt::hasModel()) return replyOk("เลือกโมเดล AI แล้ว แต่นาฬิกายังไม่มีโมเดล — ใช้สูตรมาตรฐานไปก่อนจนกว่าจะอัปโหลด");
+  replyOk(on ? "ตัดสินด้วยโมเดล AI" : "ตัดสินด้วยสูตรมาตรฐาน (โมเดลยังเก็บไว้ในนาฬิกา)");
 }
 
 // POST /api/ml/data/delete?row=&t=&qid=: ลบข้อมูลเทรน 1 แถว (ปุ่มลบในรายการบนมือถือ)
@@ -736,6 +752,7 @@ void begin() {
   server.on("/api/ml/data/clear", HTTP_POST, W<hMlDataClear>);
   server.on("/api/ml/data/delete", HTTP_POST, W<hMlDataDelete>);
   server.on("/api/ml/feedback", HTTP_POST, W<hMlFeedback>);
+  server.on("/api/ml/use", HTTP_POST, W<hMlUse>);
   server.on("/api/sleep", HTTP_POST, W<hSleep>);
   server.on("/api/wifi", HTTP_POST, W<hWifiPower>);
   server.on("/api/time", HTTP_POST, W<hTime>);

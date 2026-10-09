@@ -35,6 +35,7 @@ uint32_t s_presses = 0;
 uint16_t s_buttonQid = 900;    // คำถามที่เริ่มจากปุ่มบนนาฬิกาใช้เลข 900+
 
 // ตั้งความสว่าง LED (PWM) — กลับขั้วให้ถ้า LED ติดเมื่อขาเป็น LOW
+// [เทคนิค: PWM (LEDC)] ปรับความสว่าง LED ด้วย duty cycle 8 บิต ที่ 5 kHz (หรี่/กระพริบ/หายใจ)
 void ledWrite(uint8_t duty) {
   const uint8_t hw = LED_ACTIVE_LOW ? (uint8_t)(255 - duty) : duty;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -168,6 +169,8 @@ void handleHold(uint8_t level) {
 }
 
 // อ่านปุ่ม BOOT แบบกันเด้ง (debounce) แล้วแยกเป็นกดสั้น/กดค้าง
+// [เทคนิค: GPIO input + software debounce] อ่านปุ่ม BOOT (INPUT_PULLUP, กด = LOW) ต้องนิ่งเกิน DEBOUNCE_MS จึงนับ
+//   แยกกดสั้น/กดหลายครั้ง/กดค้าง 2-5-10 s เป็นคำสั่งต่างกัน
 void pollButton(uint32_t now) {
   const bool raw = digitalRead(PIN_BUTTON) == LOW;   // กด = LOW (ปุ่มต่อลง GND)
   if (raw != s_raw) {

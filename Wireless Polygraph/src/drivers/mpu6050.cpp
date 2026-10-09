@@ -62,6 +62,7 @@ bool Mpu6050::begin(TwoWire& wire, uint8_t addr) {
 }
 
 // อ่านความเร่ง 3 แกน แปลงเป็น m/s²
+// [เทคนิค: I2C register read] อ่าน ACCEL_XOUT_H..ZOUT_L 6 ไบต์ต่อเนื่อง รวม 2 ไบต์ (big-endian) เป็นค่า 16 บิตมีเครื่องหมาย
 bool Mpu6050::readAccel(float& ax, float& ay, float& az) {
   if (!ok_) return false;
   uint8_t b[6];

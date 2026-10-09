@@ -232,7 +232,9 @@ footer{text-align:center;color:var(--mut);font-size:12px;padding:4px 0 20px}a{co
 </section>
 
 <section class="card" id="sAI">
-<h2><svg class="ico"><use href="#i-chip"/></svg>โมเดล AI</h2>
+<h2><svg class="ico"><use href="#i-chip"/></svg>วิธีตัดสิน &amp; โมเดล AI</h2>
+<div class="seg" id="dec"><button data-u="1">โมเดล AI</button><button data-u="0">สูตรมาตรฐาน</button></div>
+<p class="hint" id="decHint"></p>
 <div id="mlInfo"></div>
 <div class="row">
 <label class="btn" for="mf"><svg class="ico"><use href="#i-up"/></svg>อัปโหลด model.json</label>
@@ -357,7 +359,8 @@ function chk(ok,t1,t2,warn){return '<div class="chk"><b class="'+(ok?'ok':warn?'
 function render(){
  $('dot').className='dot on';$('hcon').textContent='เชื่อมต่อแล้ว';
  $('dev').textContent=L.id+'  |  FW '+L.fw;$('fw').textContent=L.fw;
- $('hbat').innerHTML=ic('batt')+(L.bat?L.bp+'%':'USB');
+ // L.bat = วัดแรงดันแบตที่ GPIO4 ได้ > 2.5 V (ถ้าวัดไม่ได้ ไม่ได้แปลว่าใช้ USB เสมอ — อาจเป็นสายวัดแบตหลุด)
+ $('hbat').innerHTML=ic('batt')+(L.bat?L.bp+'%':'ไม่พบแบต');
  $('hbat').title='แบตเตอรี่ '+fx(L.vb/1000,2)+' V';
 
  const train=L.md===1;
@@ -370,7 +373,12 @@ function render(){
  }
  $('mhint').textContent=train
   ?'โหมดเก็บข้อมูล: ข้อควบคุม (ตอบจริง/สั่งให้โกหก) ทุกข้อถูกบันทึกลงไฟล์ CSV ในนาฬิกา เพื่อนำไปเทรน AI'
-  :'โหมดใช้งานจริง: ถามคำถามที่ไม่รู้เฉลย ระบบตัดสินด้วย'+(L.ml?'โมเดล AI ที่ติดตั้งไว้':'สูตรมาตรฐาน (ยังไม่ได้ติดตั้งโมเดล AI)')+' แล้วกดบอกว่าถูก/ผิด';
+  :'โหมดใช้งานจริง: ถามคำถามที่ไม่รู้เฉลย ระบบตัดสินด้วย'+(L.mu||(L.mu==null&&L.ml)?'โมเดล AI':'สูตรมาตรฐาน'+(L.ml?' (เลือกไว้ — โมเดลยังเก็บอยู่)':' (ยังไม่ได้ติดตั้งโมเดล AI)'))+' แล้วกดบอกว่าถูก/ผิด';
+ // ปุ่มเลือกวิธีตัดสิน (mu = ตัดสินด้วยโมเดลจริงไหม; เฟิร์มแวร์เก่าไม่มี mu -> ดูจาก ml)
+ const ai=L.mu!=null?!!L.mu:!!L.ml;
+ document.querySelectorAll('#dec button').forEach(b=>b.classList.toggle('on',(b.dataset.u==='1')===ai));
+ $('decHint').textContent=ai?'ตอนนี้: โมเดล AI คำนวณ P(โกหก) = sigmoid(b + ผลรวม w×ค่าที่ปรับสเกล) จาก 12 ค่า'
+  :'ตอนนี้: สูตรมาตรฐาน คำนวณจาก z-score 5 สัญญาณถ่วงน้ำหนัก'+(L.cal?' + เกณฑ์ที่ปรับจากข้อควบคุมของคนนี้':'')+(L.ml?' (โมเดลยังเก็บอยู่ กดสลับกลับได้)':'');
 
  // สถานะ engine: 0 ยังไม่วัด, 1 กำลังวัดค่าปกติ, 2 พร้อม, 3 กำลังถาม
  const es=L.es,p=Math.round((L.ep||0)*100);
@@ -401,7 +409,7 @@ function render(){
   tile('temp','อุณหภูมิผิว',fx(L.tmp,1),'°C','',L.tmp==null)+
   tile('wave','มือสั่น',fx(L.trm,3),'m/s²','ขยับตัว '+fx(L.mot,2),false)+
   tile('gauge','ระดับความตื่นตัว',L.si>=0?L.si:'--','/ 100',L.si>=0?'':'คำนวณหลังวัดค่าปกติ',false)+
-  tile('batt','แบตเตอรี่',L.bat?L.bp:'USB',L.bat?'%':'',fx(L.vb/1000,2)+' V | CPU '+L.cpu+' MHz',false);
+  tile('batt','แบตเตอรี่',L.bat?L.bp:'วัดไม่ได้',L.bat?'%':'',fx(L.vb/1000,2)+' V'+((L.fl&256)?' | เสียบ USB':'')+' | CPU '+L.cpu+' MHz',!L.bat);
 
  for(const [id,v] of [['sby',L.sby],['eco',L.eco],['wp',L.wp]]){
   const s=$(id);if(document.activeElement===s||v==null)continue;
@@ -610,9 +618,9 @@ async function loadMl(){
   if(document.activeElement!==$('subj'))$('subj').value=M.subject&&M.subject!=='-'?M.subject:'';
   const m=M.model;
   $('mlInfo').innerHTML=m.loaded
-   ?'<div class="kv"><span>สถานะ</span><b style="color:var(--tru)">ติดตั้งแล้ว ใช้ตัดสินในโหมดใช้งานจริง</b></div>'+
+   ?'<div class="kv"><span>สถานะ</span><b style="color:var(--tru)">ติดตั้งแล้ว'+(M.use===false?' (ไม่ได้ใช้ — เลือกสูตรมาตรฐานอยู่)':' ใช้ตัดสินอยู่')+'</b></div>'+
     '<div class="kv"><span>ชื่อโมเดล</span><span>'+esc(m.name)+'</span></div>'+
-    '<div class="kv"><span>ความแม่นยำจาก cross-validation</span><span>'+Math.round(m.accuracy*100)+'%'+(m.accuracy<0.6?' (ยังต่ำ ควรเก็บข้อมูลเพิ่ม)':'')+'</span></div>'+
+    '<div class="kv"><span>ความแม่นยำจาก cross-validation</span><span>'+Math.round(m.accuracy*100)+'%'+(m.accuracy<0.6?' (ยังต่ำ แนะนำใช้สูตรมาตรฐาน)':'')+'</span></div>'+
     '<div class="kv"><span>จำนวนข้อมูลที่ใช้เทรน</span><span>'+m.samples+' ข้อ</span></div>'+
     '<div class="kv"><span>ค่าที่ใช้ตัดสิน</span><span style="text-align:right">'+esc(m.features.join(', '))+'</span></div>'
    :'<p class="hint" style="margin:0">ยังไม่ได้ติดตั้งโมเดล ตอนนี้ตัดสินด้วยสูตรมาตรฐาน<br>'+
@@ -637,6 +645,8 @@ $('mf').onchange=async e=>{
 
 // ---------- ปุ่ม ----------
 document.querySelectorAll('#seg button').forEach(b=>{b.onclick=()=>act('/api/ml/mode?mode='+b.dataset.m)});
+// เลือกวิธีตัดสิน: POST /api/ml/use (เก็บใน NVS ของนาฬิกา โมเดลไม่ถูกลบ)
+document.querySelectorAll('#dec button').forEach(b=>{b.onclick=()=>act('/api/ml/use?on='+b.dataset.u)});
 document.querySelectorAll('#tabs button').forEach(b=>{b.onclick=()=>{
  sig=b.dataset.s;document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));chart();}});
 $('bBase').onclick=()=>{if(L&&L.bl&&!confirm('วัดค่าปกติใหม่? ทำเฉพาะตอนเปลี่ยนผู้ถูกทดสอบหรือถอดนาฬิกา — ข้อควบคุมที่ถามไปแล้วต้องถามใหม่'))return;

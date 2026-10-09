@@ -14,6 +14,8 @@
 | เก็บข้อมูล → เทรน AI → ส่งเข้านาฬิกา (ทีละคลิก) + AI ทำงานยังไง | [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md) |
 | ทุกไฟล์/โฟลเดอร์ทำอะไร เชื่อมกันยังไง | [`PROJECT_MAP.md`](PROJECT_MAP.md) |
 | ผังการทำงาน (บูต, RTOS, สัญญาณ, ตัดสิน, watchdog, flash map ...) | [`FLOWCHARTS.md`](FLOWCHARTS.md) |
+| **เทคนิคที่เรียน (interrupt, RTOS, I2C, ADC, memory, WiFi, sleep, watchdog ...) อยู่ไฟล์ไหน บรรทัดไหน ทำงานยังไง** + คำถามที่อาจารย์น่าจะถาม | [`TECHNIQUES.md`](TECHNIQUES.md) |
+| สูตรตัดสิน 2 แบบ (สูตรมาตรฐาน / โมเดล AI) | คู่มือ ส่วนที่ 5.0 |
 | ความหมายทุกคอลัมน์ใน CSV / ฐานข้อมูล | [`Polygraph-Studio/DATA_DICTIONARY.md`](Polygraph-Studio/DATA_DICTIONARY.md) |
 | สไลด์นำเสนอ | [`presentation/`](presentation/) |
 

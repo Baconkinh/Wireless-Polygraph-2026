@@ -5,7 +5,7 @@ import { S, on } from './store.js';
 import { connectWS } from './ws.js';
 import { $, $$, fmt, toast, STATE_TH, vinfo } from './ui.js';
 
-const TITLES = { home: 'Wireless Polygraph', use: 'ใช้งานจริง', collect: 'เก็บข้อมูลเทรน AI', data: 'ข้อมูล & เทรน AI',
+const TITLES = { home: 'Wireless Polygraph · ใช้งานจริง', collect: 'เก็บข้อมูลเทรน AI', data: 'ข้อมูล & เทรน AI',
   results: 'ผลลัพธ์ & รายงาน',
   system: 'ระบบ & อุปกรณ์', guide: 'คู่มือ & หลักการ' };
 const views = {};          // name -> module (หรือ fallback)
@@ -51,7 +51,8 @@ async function loadView(name) {
 
 // เปลี่ยนหน้า: เน้นเมนู, แสดง section ของหน้านั้น, โหลดโมดูลหน้า (ครั้งแรก), เรียก show()/hide()
 async function show(name) {
-  if (name === 'session') name = 'home';  // หน้า "ทดสอบ" เดิมถูกรวมเข้าหน้าหลักแล้ว (ลิงก์เก่ายังใช้ได้)
+  // หน้า "ทดสอบ" (session) และ "ใช้งานจริง" (use) เดิม ถูกรวมเป็นหน้าหลักแล้ว — ลิงก์เก่ายังพามาที่หน้าหลัก
+  if (name === 'session' || name === 'use') name = 'home';
   if (!TITLES[name]) name = 'home';
   current = name;
   $$('#nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
@@ -86,8 +87,14 @@ function topbar() {
   if (v) {
     $('#engine-text').textContent = (STATE_TH[v.es] || '-') + (v.es === 1 || v.es === 3 ? ` ${Math.round((v.ep || 0) * 100)}%` : '');
     // แสดง % เสมอเมื่อวัดแรงดันแบตได้ (v.bat) แม้จะเสียบ USB อยู่ด้วย
+    // v.bat = เฟิร์มแวร์วัดแรงดันแบตที่ขา GPIO4 (ผ่านตัวแบ่ง 100k/100k) ได้เกิน 2.5 V
+    // v.fl & 256 = ต่อสาย USB กับคอม (ตรวจจาก USB CDC) — เป็นคนละเรื่องกัน จึงแสดงแยก
+    // (เดิมเขียนว่า "ไฟ USB" ทุกครั้งที่วัดแบตไม่ได้ ทำให้เข้าใจผิดเวลาเสียบแบตอยู่แต่สายวัดแรงดันไม่ต่อ)
     const usb = (v.fl & 256) !== 0;
-    $('#batt-text').textContent = v.bat ? `${v.bp}% · ${fmt(v.vb / 1000, 2)} V${usb ? ' · USB' : ''}` : 'ไฟ USB (ไม่พบแบต)';
+    $('#batt-text').textContent = v.bat ? `${v.bp}% · ${fmt(v.vb / 1000, 2)} V${usb ? ' · USB' : ''}`
+      : `วัดแบตไม่ได้ (${fmt(v.vb / 1000, 2)} V)${usb ? ' · USB' : ''}`;
+    $('#pill-batt').title = v.bat ? 'แบตเตอรี่' : 'แรงดันที่ขา GPIO4 ต่ำกว่า 2.5 V จึงถือว่า "ไม่มีแบต" — ถ้าเสียบแบตอยู่จริง ให้ตรวจ'
+      + ' สวิตช์แบต, สายที่ J5, ตัวต้านทาน R4/R5 (วัดที่ GPIO4 ควรได้ ~1.8-2.1 V) ดูคู่มือส่วนที่ 7';
   }
   if (st && st.stats) {
     const s = st.stats;
@@ -113,7 +120,7 @@ on('event', (e) => {
     case 'button': toast(`ปุ่มบนนาฬิกา: ${e.g} → ${e.act}`, 'info'); break;
     case 'model': toast('นาฬิกาได้รับโมเดล AI ใหม่แล้ว', 'ok'); break;
     case 'result':
-      if (current !== 'home' && current !== 'use') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
+      if (current !== 'home') { const vi = vinfo(e.verdict); toast(`ผลข้อ #${e.qid}: ${vi.th} (โอกาสโกหก ${Math.round((e.p || 0) * 100)}%)`, 'info'); }
       break;
     default: break;
   }

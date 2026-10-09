@@ -19,6 +19,7 @@ inline float emaAlpha(float fs, float tauSec) {
 }
 
 // Exponential moving average (low-pass อันดับ 1)
+// [เทคนิค: Digital filter — EMA (low-pass อันดับ 1)] y += α(x − y), α = 1 − e^(−1/(fs·τ)) ใช้ RAM แค่ 1 ค่า
 class Ema {
  public:
   void setup(float fs, float tauSec) { a_ = emaAlpha(fs, tauSec); }
@@ -39,6 +40,7 @@ class Ema {
 
 // Biquad (IIR อันดับ 2) แบบ Direct Form II Transposed
 // สูตรสัมประสิทธิ์จาก "RBJ Audio EQ Cookbook" — Q = 0.7071 คือ Butterworth (ไม่มีริปเปิล)
+// [เทคนิค: Digital filter — Biquad IIR (อันดับ 2, Butterworth Q = 0.707)] low-pass / high-pass ตามสูตร RBJ cookbook
 class Biquad {
  public:
   void lowpass(float fs, float fc, float q = 0.70710678f) {

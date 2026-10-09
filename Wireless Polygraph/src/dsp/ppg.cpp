@@ -76,6 +76,8 @@ float PpgProcessor::medianRecentIbi(int m) const {
 }
 
 // ป้อนแสง IR 1 ค่า (100 Hz): ตรวจการแตะผิว -> กรอง -> หาจังหวะหัวใจด้วยความชัน (SSF) -> คืน true เมื่อเจอจังหวะ
+// [เทคนิค: Signal processing — PPG peak detection] ตรวจแตะผิว (hysteresis) -> low-pass 6 Hz -> SSF (ผลรวมความชันขาขึ้น 120 ms)
+//   -> เกณฑ์ปรับตัวเอง -> หาจุดยอดแต่ละครั้งที่หัวใจเต้น -> IBI -> bpm, HRV (RMSSD), แรงชีพจร
 bool PpgProcessor::push(uint32_t irRaw) {
   n_++;
   saturated_ = irRaw >= 260000;  // 18-bit เต็มสเกล = 262143 -> ใกล้เพดาน = ยอดคลื่นถูกตัด

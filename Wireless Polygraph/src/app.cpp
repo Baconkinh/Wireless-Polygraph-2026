@@ -35,17 +35,23 @@ static volatile uint32_t s_lastActivity = 0;
 
 // สร้าง mutex / queue / event group ทั้งหมดก่อนเริ่ม task (ต้องมีก่อนใครจะใช้)
 void createSyncObjects() {
+  // [เทคนิค: RTOS Mutex] liveMutex = ค่าสด, engineMutex = LieEngine, fsMutex = ระบบไฟล์
+  //   กัน race condition: 2 task อ่าน/เขียนข้อมูลก้อนเดียวกันพร้อมกันแล้วได้ค่าครึ่ง ๆ กลาง ๆ
   liveMutex = xSemaphoreCreateMutex();
   engineMutex = xSemaphoreCreateMutex();
   fsMutex = xSemaphoreCreateMutex();
+  // [เทคนิค: RTOS Queue (producer-consumer)] ส่งข้อมูลข้าม task แบบคัดลอกค่า ไม่ต้องใช้ตัวแปรร่วม
+  //   frame: sensor->engine, wave: sensor->telemetry, event: engine->UDP, log: ทุก task->supervisor (เขียนแฟลช)
   frameQueue = xQueueCreate(10, sizeof(Vitals));      // 2 s เผื่อ engine ช้า
   waveQueue = xQueueCreate(8, sizeof(WaveChunk));
   eventQueue = xQueueCreate(6, sizeof(EventMsg));
   logQueue = xQueueCreate(16, sizeof(LogMsg));
+  // [เทคนิค: RTOS Event Group] ธงสถานะเป็นบิต (WiFi ขึ้น, ต่อ USB, ECO, engine ไม่ว่าง, OTA ...) ทุก task อ่านได้ทันที
   events = xEventGroupCreate();
 }
 
 // sensorTask เขียนค่าสดล่าสุด (ล็อก liveMutex กัน task อื่นอ่านค่าครึ่ง ๆ กลาง ๆ)
+// [เทคนิค: Critical section ด้วย mutex] ถือ mutex แค่ช่วงคัดลอก struct แล้วปล่อยทันที (ไม่ถือนาน = task อื่นไม่ต้องรอ)
 void setVitals(const Vitals& v) {
   if (!liveMutex) { s_live = v; return; }
   xSemaphoreTake(liveMutex, portMAX_DELAY);

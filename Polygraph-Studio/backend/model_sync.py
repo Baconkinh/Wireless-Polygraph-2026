@@ -68,6 +68,8 @@ def same_model(local: Optional[Dict[str, Any]], watch: Optional[Dict[str, Any]])
             and int(watch.get("trainedAt") or 0) == int(local.get("trained_at") or 0))
 
 
+# [เทคนิค: Periodic sync + retry backoff] ทุก 4 s เทียบโมเดลในคอมกับในนาฬิกา (ชื่อ+เวลาเทรน) ไม่ตรง -> POST /api/ml/model
+#   ส่งไม่สำเร็จรอ 30 s ก่อนลองใหม่
 class ModelSync:
     """ตัวคอยดูแลให้โมเดลในนาฬิกาตรงกับ data/model.json (รายละเอียดที่หัวไฟล์)"""
     def __init__(self, link, hub):
@@ -88,9 +90,15 @@ class ModelSync:
     # ------------------------------------------------------------------ สถานะ
     def state(self) -> Dict[str, Any]:
         wm = (self.watch or {}).get("model") if self.watch else None
+        w = self.watch or {}
+        loaded = bool(wm and wm.get("loaded"))
+        # use = ผู้ใช้เลือกให้นาฬิกาตัดสินด้วยโมเดล AI ไหม (เฟิร์มแวร์ก่อน 9 ต.ค. ไม่มีค่านี้ -> None)
+        use = w.get("use") if "use" in w else None
+        decider = ("ai" if loaded and use is not False else "rules") if self.watch else None
         return {"auto": self.auto, "local": self.local, "watch": wm,
-                "watch_mode": (self.watch or {}).get("mode"), "watch_data": (self.watch or {}).get("data"),
+                "watch_mode": w.get("mode"), "watch_data": w.get("data"),
                 "in_sync": same_model(self.local, wm), "connected": bool(self.link.connected),
+                "use_model": use, "decider": decider, "fw_has_use": "use" in w,
                 "msg": self.msg, "busy": self.busy}
 
     def publish(self, force: bool = False):
@@ -196,6 +204,42 @@ class ModelSync:
         await self.refresh_watch()
         self.publish(force=True)
         return res
+
+    async def set_use(self, on: bool) -> Dict[str, Any]:
+        """เลือกวิธีตัดสินของนาฬิกา: on=True โมเดล AI / False สูตรมาตรฐาน
+        เฟิร์มแวร์ใหม่: POST /api/ml/use (โมเดลยังอยู่ในนาฬิกา สลับกลับได้ทันที)
+        เฟิร์มแวร์เก่า (ไม่มี /api/ml/use -> NOT_FOUND): ใช้วิธีสำรอง
+          สูตรมาตรฐาน = ปิดส่งอัตโนมัติ + ลบโมเดลในนาฬิกา, โมเดล AI = เปิดส่งอัตโนมัติ + ส่ง model.json ทันที"""
+        try:
+            res = await self.link.post("/api/ml/use", on=1 if on else 0)
+        except WatchError as e:
+            return {"ok": False, "msg": str(e)}
+        if res.get("ok"):
+            self.msg = res.get("msg", "")
+            await self.refresh_watch()
+            wm = (self.watch or {}).get("model") or {}
+            if on and not wm.get("loaded") and os.path.isfile(MODEL_PATH):
+                # เลือกโมเดล AI แต่นาฬิกายังไม่มีโมเดล -> ส่ง model.json ให้เลย (ไม่ต้องไปกดอีกหน้า)
+                r = await self.upload_file(MODEL_PATH, reason="เลือกใช้โมเดล AI")
+                return {"ok": bool(r.get("ok")), "msg": r.get("msg", "")}
+            self.publish(force=True)
+            return {"ok": True, "msg": self.msg}
+        if res.get("error") != "NOT_FOUND":
+            return {"ok": False, "msg": res.get("msg", "เปลี่ยนวิธีตัดสินไม่สำเร็จ")}
+        # ---- เฟิร์มแวร์เก่า: วิธีสำรอง
+        if not on:
+            self.set_auto(False)              # ไม่งั้นระบบอัตโนมัติจะส่งโมเดลกลับเข้าไปใน 4 วินาที
+            r = await self.clear_watch()
+            msg = "เฟิร์มแวร์นี้ยังไม่มีปุ่มสลับ จึงลบโมเดลในนาฬิกาและปิดส่งอัตโนมัติแทน (อัปเดตเฟิร์มแวร์เพื่อสลับได้โดยไม่ลบ)"
+        else:
+            self.set_auto(True)
+            if not os.path.isfile(MODEL_PATH):
+                return {"ok": False, "msg": "ยังไม่มี data/model.json — เทรนก่อน"}
+            r = await self.upload_file(MODEL_PATH, reason="เลือกใช้โมเดล AI")
+            msg = r.get("msg", "")
+        self.msg = msg
+        self.publish(force=True)
+        return {"ok": bool(r.get("ok", True)), "msg": msg}
 
     def set_auto(self, on: bool):
         """เปิด/ปิดส่งอัตโนมัติ แล้วบันทึกค่าลงไฟล์"""

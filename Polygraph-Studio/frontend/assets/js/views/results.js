@@ -9,6 +9,9 @@ let root, listEl, detailEl, openId = null;
 export function mount(el) {
   root = el;
   root.innerHTML = `
+    <div class="callout" style="margin-bottom:16px"><svg class=i><use href=#i-info></use></svg>
+      หน้านี้แสดงรายงานของ "เซสชันทดสอบ" รุ่นก่อน (ฟีเจอร์เซสชันถูกเอาออกจากหน้าหลักเมื่อ 9 ต.ค. 2026 เพราะใช้ยาก)
+      — ผลการใช้งานจริงตอนนี้ดูที่ตาราง "ประวัติ" ในหน้าหลัก หรือหน้า "ข้อมูล &amp; เทรน AI"</div>
     <div class="grid g-int">
       <div class="card"><h3><svg class=i><use href=#i-list></use></svg> ประวัติการทดสอบ <span class="right"><button class="btn sm" id="r-refresh">รีเฟรช</button></span></h3>
         <div id="r-list"><p class="muted">กำลังโหลด...</p></div></div>

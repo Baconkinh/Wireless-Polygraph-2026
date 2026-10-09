@@ -13,7 +13,12 @@ const PART_COLOR = { nvs: '#5b8cff', otadata: '#7c5cff', app0: '#22d3a3', app1: 
 // สร้างหน้าระบบ & อุปกรณ์
 export function mount(el) {
   root = el;
-  root.innerHTML = `<div id="sys-body"><p class="muted">กำลังโหลดข้อมูลระบบ...</p></div>`;
+  // แยก 2 ส่วน: sys-body = ข้อมูลระบบที่วาดใหม่ทุก 3 วินาที, sys-static = การ์ดที่มีช่องกรอก/ข้อความยาว
+  // (OTA, ตั้งค่า LieEngine, log) วาดครั้งเดียว — บั๊กเดิม: อยู่ใน sys-body จึงถูกวาดทับทุก 3 วินาที
+  // log ที่โหลดมา/ค่าที่กำลังแก้จึงหายไปเอง ("ดู log ไม่ได้")
+  root.innerHTML = `<div id="sys-body"><p class="muted">กำลังโหลดข้อมูลระบบ...</p></div>
+    <div id="sys-sim"></div><div id="sys-static">${STATIC_HTML}</div>`;
+  bindStatic();
   on('device', refresh);
 }
 // เข้าหน้านี้: โหลดข้อมูลระบบจากนาฬิกา + รีเฟรชทุก 3 วินาที
@@ -21,11 +26,22 @@ export function show() { refresh(); timer = setInterval(refresh, 3000); }
 // ออกจากหน้านี้: หยุดรีเฟรช (ไม่ถามนาฬิกาโดยไม่จำเป็น)
 export function hide() { clearInterval(timer); timer = null; }
 
+// การ์ดควบคุมนาฬิกาจำลอง: วาดครั้งเดียวเมื่อรู้ว่าเป็นโหมดจำลอง (ไม่วาดทับระหว่างผู้ใช้ปรับค่า)
+function paintSim() {
+  const box = $('#sys-sim', root);
+  if (!box || box.dataset.done) return;
+  const html = simControls();
+  if (!html) return;
+  box.innerHTML = html;
+  box.dataset.done = '1';
+  bindSim();
+}
+
 // อ่าน /api/watch/system แล้ววาดใหม่ (ไม่ได้เชื่อมต่อ = แสดงคำแนะนำ)
 async function refresh() {
+  paintSim();
   if (!S.connected) {
-    $('#sys-body', root).innerHTML = `<div class="banner danger"><svg class=i><use href=#i-wifi></use></svg> ยังไม่ได้เชื่อมต่อนาฬิกา — ต่อ WiFi <b>Polygraph-Watch</b> ก่อน</div>` + simControls();
-    bindSim();
+    $('#sys-body', root).innerHTML = `<div class="banner danger"><svg class=i><use href=#i-wifi></use></svg> ยังไม่ได้เชื่อมต่อนาฬิกา — ต่อ WiFi <b>Polygraph-Watch</b> ก่อน</div>`;
     return;
   }
   const sys = await get('/api/watch/system', { quiet: true }).catch(() => null);
@@ -143,29 +159,10 @@ function render(sys) {
     </div>
   </div>
 
-  <div class="card" style="margin-top:16px">
-    <h3><svg class=i><use href=#i-up></use></svg> OTA — อัปเดตเฟิร์มแวร์ไร้สาย <span class="right small muted">รันอยู่ช่อง ${esc(ota.running)} · อัปเดตมาแล้ว ${ota.updates} ครั้ง</span></h3>
-    <p class="small muted">เลือกไฟล์ <span class="mono">.pio/build/esp32c3/firmware.bin</span> แล้วอัปโหลดผ่าน WiFi (ไม่ต้องเสียบสาย)
-    — นาฬิกาจะเขียนลงช่องที่ไม่ได้รันอยู่ แล้วรีบูต ถ้าเฟิร์มแวร์ใหม่ล่ม bootloader จะย้อนเวอร์ชันเดิมให้เอง (rollback)</p>
-    <div class="row"><input type="file" id="ota-file" accept=".bin"><button class="btn" id="ota-go">อัปโหลด</button>
-      <span id="ota-status" class="small muted"></span></div>
-    <progress id="ota-prog" max="100" value="0" style="width:100%;display:none;margin-top:8px"></progress>
-  </div>
+`;
 
-  <div class="card" style="margin-top:16px">
-    <h3><svg class=i><use href=#i-sliders></use></svg> ตั้งค่า LieEngine <span class="right small muted">เก็บใน NVS ของนาฬิกา</span></h3>
-    <div id="cfg-box"><button class="btn sm" id="cfg-load">โหลดค่าปัจจุบัน</button></div>
-  </div>
-
-  ${simControls()}
-
-  <div class="card" style="margin-top:16px">
-    <h3><svg class=i><use href=#i-doc></use></svg> Log เหตุการณ์ในนาฬิกา <span class="right"><button class="btn sm" id="log-load">โหลด</button></span></h3>
-    <pre class="log" id="log-box">กดโหลดเพื่อดู /events.log จากนาฬิกา</pre>
-  </div>`;
-
+  $('#ota-info', root).textContent = `รันอยู่ช่อง ${ota.running || '-'} · อัปเดตมาแล้ว ${ota.updates ?? 0} ครั้ง`;
   bindActions();
-  bindSim();
 }
 
 // ---------------------------------------------------------------- นาฬิกาจำลอง
@@ -231,9 +228,58 @@ function bindActions() {
     const r = await cmd('restart');
     if (r && r.ok) toast('กำลังรีสตาร์ท...', 'warn');
   });
-  $('#log-load', root)?.addEventListener('click', async () => {
-    const t = await get('/api/watch/logs?file=events', { quiet: true }).catch(() => null);
-    $('#log-box', root).textContent = (typeof t === 'string' ? t : (t && t.msg)) || 'โหลดไม่ได้';
+}
+
+// การ์ดที่วาดครั้งเดียว (OTA, ตั้งค่า LieEngine, log) — HTML อยู่ใน STATIC_HTML
+const STATIC_HTML = `
+  <div class="card" style="margin-top:16px">
+    <h3><svg class=i><use href=#i-up></use></svg> OTA — อัปเดตเฟิร์มแวร์ไร้สาย <span class="right small muted" id="ota-info"></span></h3>
+    <p class="small muted">เลือกไฟล์ <span class="mono">.pio/build/esp32c3/firmware.bin</span> แล้วอัปโหลดผ่าน WiFi (ไม่ต้องเสียบสาย)
+    — นาฬิกาจะเขียนลงช่องที่ไม่ได้รันอยู่ แล้วรีบูต ถ้าเฟิร์มแวร์ใหม่ล่ม bootloader จะย้อนเวอร์ชันเดิมให้เอง (rollback)</p>
+    <div class="row"><input type="file" id="ota-file" accept=".bin"><button class="btn" id="ota-go">อัปโหลด</button>
+      <span id="ota-status" class="small muted"></span></div>
+    <progress id="ota-prog" max="100" value="0" style="width:100%;display:none;margin-top:8px"></progress>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3><svg class=i><use href=#i-sliders></use></svg> ตั้งค่า LieEngine <span class="right small muted">เก็บใน NVS ของนาฬิกา</span></h3>
+    <div id="cfg-box"><button class="btn sm" id="cfg-load">โหลดค่าปัจจุบัน</button></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3><svg class=i><use href=#i-doc></use></svg> Log ในนาฬิกา (LittleFS)
+      <span class="right row" style="gap:6px"><select class="input sm-input" id="log-file">
+        <option value="events">events.log — เหตุการณ์ล่าสุด</option><option value="events1">events.1 — เหตุการณ์ชุดก่อน (หมุนไฟล์แล้ว)</option>
+        <option value="results">results.csv — ผลทุกข้อ</option><option value="results1">results.1 — ผลชุดก่อน</option></select>
+        <label class="small row" style="gap:4px"><input type="checkbox" id="log-auto"> อัปเดตทุก 5 วิ</label>
+        <button class="btn sm" id="log-load">โหลด</button><a class="btn sm ghost" id="log-dl" href="#" download>ดาวน์โหลด</a></span></h3>
+    <pre class="log" id="log-box" style="max-height:420px;overflow:auto">กดโหลดเพื่อดู log จากนาฬิกา (นาฬิกาส่งเฉพาะ 16 KB ท้ายไฟล์ = เหตุการณ์ล่าสุด)</pre>
+  </div>`;
+
+// ผูกปุ่มของการ์ดที่วาดครั้งเดียว (เรียกครั้งเดียวจาก mount)
+function bindStatic() {
+  // log เป็น "ข้อความธรรมดา" ไม่ใช่ JSON -> ต้องใช้ fetch().text() เอง
+  // (บั๊กเดิม: ใช้ get() ซึ่งแปลงเป็น JSON -> ได้ null ทุกครั้ง จึงขึ้น "โหลดไม่ได้" แม้นาฬิกาตอบปกติ)
+  const loadLog = async () => {
+    const f = $('#log-file', root).value, box = $('#log-box', root);
+    const url = `/api/watch/logs?file=${f}`;
+    $('#log-dl', root).href = url;
+    $('#log-dl', root).download = `watch_${f}.txt`;
+    try {
+      const res = await fetch(url);
+      const t = await res.text();
+      if (!res.ok) { box.textContent = `โหลดไม่ได้: ${t || 'HTTP ' + res.status}`; return; }
+      const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+      box.textContent = t.trim() ? t : '(ไฟล์ว่าง)';
+      if (atEnd) box.scrollTop = box.scrollHeight;          // เลื่อนไปบรรทัดล่าสุด (ถ้าผู้ใช้ไม่ได้เลื่อนขึ้นไปอ่าน)
+    } catch { box.textContent = 'ติดต่อ Studio ไม่ได้'; }
+  };
+  let logTimer = null;
+  $('#log-load', root)?.addEventListener('click', loadLog);
+  $('#log-file', root)?.addEventListener('change', loadLog);
+  $('#log-auto', root)?.addEventListener('change', (e) => {
+    clearInterval(logTimer);
+    if (e.target.checked) { loadLog(); logTimer = setInterval(() => { if (root.isConnected && root.offsetParent) loadLog(); }, 5000); }
   });
   $('#cfg-load', root)?.addEventListener('click', loadConfig);
   bindOta();

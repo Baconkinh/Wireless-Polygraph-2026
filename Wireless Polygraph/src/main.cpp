@@ -78,6 +78,8 @@ static void printBanner(bool sensorsOk) {
 
 // Arduino เรียกครั้งเดียวตอนเปิดเครื่อง: Serial -> watchdog -> NVS/LittleFS -> เซนเซอร์ -> WiFi -> สร้าง 6 task
 void setup() {
+  // [เทคนิค: UART / USB-CDC Serial] เปิดพอร์ตอนุกรม 115200 bps (ESP32-C3 ส่งผ่าน USB-CDC ในชิป ไม่ใช้ชิป USB-UART แยก)
+  //   ใช้ทำ Serial console (cli.cpp) สั่งงาน/ดูสถานะได้แม้ WiFi ไม่ขึ้น
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
   // USB CDC ของ ESP32-C3: รอส่งได้ไม่เกิน 50 ms ถ้าคอมไม่ได้อ่าน แล้วข้ามไป
@@ -86,11 +88,17 @@ void setup() {
   Serial.setTxTimeoutMs(50);
 #endif
 
+  // [เทคนิค: Deep sleep wake-up handling + RTC memory] ตื่นจาก timer -> อ่านตัวแปร RTC_DATA_ATTR ว่าหลับเพราะอะไร
+  //   ถ้าไม่มีใครใส่นาฬิกา หลับต่อทันทีโดยไม่เปิด WiFi (ประหยัดไฟที่สุด)
   power::handleWakeEarly();      // (1) อาจหลับต่อทันทีถ้าไม่มีใครใส่นาฬิกา
+  // [เทคนิค: Reset reason + RTC_NOINIT "กล่องดำ" + Core dump] อ่านสาเหตุรีเซ็ตรอบก่อน (esp_reset_reason)
+  //   ต้องทำก่อนโค้ดอื่นเขียนทับ -> รู้ว่ารีบูตเพราะ watchdog / ไฟตก / panic / ผู้ใช้สั่ง
   wdt::captureBootInfo();        // (2) ต้องอ่านก่อนอย่างอื่นเขียนทับ RTC record
+  // [เทคนิค: Memory — NVS, EEPROM emulation, LittleFS] เปิดหน่วยความจำถาวรทั้ง 3 แบบ (รายละเอียดใน sys/storage.cpp)
   storage::begin();              // (3)
   countBootReason();
 
+  // [เทคนิค: RTOS synchronization] สร้าง mutex / queue / event group ก่อนสร้าง task (ต้องมีก่อนใครจะใช้)
   app::createSyncObjects();
   ui::begin();
   // ไฟ LED บอกสาเหตุการบูต (ดูได้แม้ไม่มีสาย USB): 2 ครั้ง = ปกติ, 4 = watchdog/ล่ม,
@@ -107,17 +115,23 @@ void setup() {
   power::begin();
   // เปิด WiFi: ถ้ารีเซ็ตครั้งก่อนเพราะไฟตก -> รอให้ไฟนิ่ง + ลด CPU + กำลังส่งต่ำสุดก่อน
   uint8_t wifiLevel = storage::settings().wifiPower;
+  // [เทคนิค: Brownout recovery / Power optimization] รอบก่อนรีเซ็ตเพราะไฟตก -> ลด CPU เหลือ 80 MHz
+  //   + ส่ง WiFi กำลังต่ำสุด (2 dBm) + รอ 0.8 s ให้ไฟนิ่ง เพื่อลดกระแสพีคตอนเปิดวิทยุ
   if (brownout) {
     wifiLevel = 3;               // 2 dBm (ระยะสั้นลง แต่กินกระแสพีคน้อยสุด)
     setCpuFrequencyMhz(80);
     delay(800);
   }
+  // [เทคนิค: WiFi SoftAP] นาฬิกาเป็น access point เอง (192.168.4.1) มือถือ/คอมต่อตรงได้โดยไม่ต้องมีเราเตอร์
   const bool wifiOk = net::beginAp(wifiLevel);
   if (brownout && !storage::settings().eco) setCpuFrequencyMhz(CPU_MHZ_NORMAL);
   ui::wifiSignal(wifiOk);
   web::begin();
+  // [เทคนิค: Task Watchdog Timer (TWDT)] task ไหนไม่เรียก wdt::feed() ภายใน 8 วินาที -> panic + รีเซ็ต
   wdt::beginTaskWdt();
+  // [เทคนิค: FreeRTOS multitasking] สร้าง 6 task แยกตามความเร่งด่วน + hardware timer 100 Hz (tasks.cpp)
   tasks::startAll();
+  // [เทคนิค: Timer-interrupt watchdog] hardware timer นับถึง 12 s -> ISR รีเซ็ตเครื่อง ถ้า supervisor ไม่ "ป้อน" (feedHw)
   wdt::beginHwWdt();
   app::touchActivity();
   printBanner(sensorsOk);
@@ -137,6 +151,7 @@ void setup() {
 
 // loop() = Arduino loopTask (priority 1): ใช้เป็น Serial console อย่างเดียว
 // งานจริงทั้งหมดอยู่ใน FreeRTOS task ที่สร้างใน tasks::startAll()
+// [เทคนิค: Arduino loop = FreeRTOS loopTask priority 1] ใช้อ่าน Serial console อย่างเดียว งานหลักอยู่ใน task อื่น
 void loop() {
   cli::poll();
   delay(20);

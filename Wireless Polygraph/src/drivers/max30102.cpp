@@ -93,6 +93,8 @@ bool Max30102::begin(TwoWire& wire, uint8_t addr, uint8_t irLed, uint8_t redLed)
 }
 
 // อ่านค่าที่สะสมใน FIFO (แสง IR + แดง) ออกมาทั้งหมด — คืนจำนวนค่า (-1 = อ่านไม่ได้)
+// [เทคนิค: I2C burst read + FIFO ของเซนเซอร์] อ่าน pointer WR/OVF/RD ทีเดียว 3 ไบต์ แล้วอ่านข้อมูลหลาย sample ต่อเนื่อง
+//   ชิปเก็บ sample ใน FIFO 32 ช่องเอง -> MCU ไม่ต้องอ่านตรงเวลาทุก sample
 int Max30102::read(Sample* out, int maxN) {
   if (!ok_) return -1;
   uint8_t ptr[3];

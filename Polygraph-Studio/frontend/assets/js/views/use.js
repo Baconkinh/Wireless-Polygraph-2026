@@ -26,7 +26,7 @@ export function mount(el) {
     <div class="grid home-cols" style="margin-top:16px">
       <div class="card" id="us-main"></div>
       <div class="stack">
-        <div class="card"><h3>${I('chip')} AI ที่นาฬิกาใช้ตัดสิน</h3><div id="us-ai" class="small"></div></div>
+        <div class="card"><h3>${I('chip')} วิธีตัดสินของนาฬิกา</h3><div id="us-ai" class="small"></div></div>
         <div class="card"><h3>${I('list')} รอบนี้</h3><div id="us-stat"></div><div id="us-hist" class="small muted" style="margin-top:8px">ยังไม่มีข้อ</div>
           <div class="small faint" style="margin-top:6px">ลบข้อที่ถามผิด/ทดลอง: ติ๊กหรือกด ${I('trash')} ในตาราง "ประวัติการใช้งานจริง" ด้านล่าง (กู้คืนได้)</div></div>
         <div class="card"><h3>${I('info')} ทำไมต้องกด ถูก / ผิด</h3>
@@ -185,15 +185,39 @@ function paintLive() {
   $('#us-abort', root).disabled = !cur;
 }
 
-// แสดงโมเดลที่นาฬิกาใช้ตัดสิน และตรงกับตัวล่าสุดในคอมไหม
+// แสดงโมเดลที่นาฬิกาใช้ตัดสิน + ปุ่มเลือก "ตัดสินด้วย โมเดล AI / สูตรมาตรฐาน"
+//   โมเดล AI      = Logistic Regression ที่เทรนจาก result_*.csv (ml/train.py) -> P(โกหก) = sigmoid(b + Σ w·x)
+//   สูตรมาตรฐาน   = LieEngine ในเฟิร์มแวร์: ถ่วงน้ำหนัก z-score 5 สัญญาณ -> sigmoid (+ ปรับเกณฑ์จากข้อควบคุม)
+//   (สูตรละเอียดอยู่ในคู่มือ ส่วนที่ 5.1 และ TECHNIQUES.md)
+// เลือกแล้ว backend ส่ง POST /api/ml/use ให้นาฬิกา (เฟิร์มแวร์เก่าใช้วิธีสำรอง: ลบ/ส่งโมเดลแทน)
 function paintAi(a) {
   if (!a || !root || !$('#us-ai', root)) return;
   S.ai = a;
-  const w = a.watch;
-  const model = w && w.loaded ? `<b class="mono">${esc(w.name)}</b> (แม่นยำตอนเทรน ${w.accuracy != null ? Math.round(w.accuracy * 100) + '%' : '-'}, ${w.samples} ข้อ)`
-    : 'ไม่มีโมเดล — ใช้สูตรมาตรฐาน';
-  $('#us-ai', root).innerHTML = `<div class="kv"><span>ในนาฬิกา</span><span>${a.connected ? model : 'ยังไม่ได้เชื่อมนาฬิกา'}</span>
-    <span>ล่าสุดในคอม</span><span>${a.local ? `<span class="mono">${esc(a.local.name)}</span>` : 'ยังไม่ได้เทรน'}</span>
+  const w = a.watch, l = a.local;
+  const pct = (x) => (x != null ? Math.round(x * 100) + '%' : '-');
+  const model = w && w.loaded ? `<b class="mono">${esc(w.name)}</b> (แม่นยำตอนเทรน ${pct(w.accuracy)}, ${w.samples} ข้อ)`
+    : 'ไม่มีโมเดล';
+  const ai = a.decider === 'ai';
+  // เตือนเมื่อโมเดลไม่ดีกว่าการเดาคลาสที่มากที่สุด (เช่น เดา "จริง" ทุกข้อ) — ใช้ไปก็ไม่ช่วย
+  const weak = l && l.accuracy != null && l.majority != null && l.accuracy <= l.majority;
+  $('#us-ai', root).innerHTML = `<div class="row" style="margin-bottom:8px"><span>ตัดสินด้วย</span>
+      <div class="seg" id="us-dec"><button data-v="1" class="${ai ? 'on' : ''}">โมเดล AI</button>
+        <button data-v="0" class="${a.decider === 'rules' ? 'on' : ''}">สูตรมาตรฐาน</button></div></div>
+    ${weak ? `<div class="callout warn small" style="margin-bottom:8px">โมเดลล่าสุดแม่นยำ ${pct(l.accuracy)} ไม่สูงกว่าการเดา "คำตอบที่พบบ่อยที่สุด" ทุกข้อ
+      (${pct(l.majority)}) — แนะนำใช้ <b>สูตรมาตรฐาน</b> จนกว่าจะเก็บข้อมูลเพิ่มแล้วเทรนใหม่</div>` : ''}
+    <div class="kv"><span>ตอนนี้นาฬิกาใช้</span><span>${!a.connected ? 'ยังไม่ได้เชื่อมนาฬิกา'
+      : ai ? 'โมเดล AI' : `สูตรมาตรฐาน${S.live && S.live.cal ? ' (ปรับเกณฑ์จากข้อควบคุมแล้ว)' : ''}`}</span>
+    <span>โมเดลในนาฬิกา</span><span>${a.connected ? model : '-'}</span>
+    <span>ล่าสุดในคอม</span><span>${l ? `<span class="mono">${esc(l.name)}</span> · ${pct(l.accuracy)}` : 'ยังไม่ได้เทรน'}</span>
     <span>ส่งอัตโนมัติ</span><span>${a.auto ? 'เปิด' : 'ปิด'} ${a.connected ? (a.in_sync ? '<span class="badge b-truth">ตรงกัน</span>' : '<span class="badge b-inconclusive">ยังไม่ตรง</span>') : ''}</span></div>
-    <div class="muted" style="margin-top:6px">${esc(a.msg || '')} · ตั้งค่าที่หน้า <a href="#data">ข้อมูล &amp; เทรน AI</a></div>`;
+    <div class="muted" style="margin-top:6px">${esc(a.msg || '')}${a.connected && !a.fw_has_use ? ' · เฟิร์มแวร์นี้ยังไม่มีสวิตช์ในตัว (สลับโดยลบ/ส่งโมเดลแทน)' : ''}
+      · ตั้งค่าโมเดลที่หน้า <a href="#data">ข้อมูล &amp; เทรน AI</a></div>`;
+  root.querySelectorAll('#us-dec button').forEach((b) => {
+    b.onclick = async () => {
+      if (!S.connected) return toast('ยังไม่ได้เชื่อมนาฬิกา', 'warn');
+      const r = await post('/api/ai/use', { on: b.dataset.v === '1' });
+      if (r && r.ok) toast(r.msg, 'ok', 7000);
+      get('/api/ai', { quiet: true }).then(paintAi);
+    };
+  });
 }

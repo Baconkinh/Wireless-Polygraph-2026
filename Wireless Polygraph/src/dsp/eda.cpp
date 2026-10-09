@@ -28,6 +28,8 @@ void EdaProcessor::begin(float fs) {
 }
 
 // ป้อนค่า GSR 1 ค่า: แยก tonic (ระดับพื้น) กับ phasic (ยอดสั้น ๆ ตอนตื่นเต้น) และนับยอด SCR
+// [เทคนิค: Signal processing — EDA tonic/phasic] tonic = EMA 15 s (ระดับพื้น), phasic = ค่าปัจจุบัน − tonic
+//   ยอดตอบสนองสั้น ๆ (SCR) ตอนตื่นเต้นจะเห็นชัดใน phasic
 void EdaProcessor::push(float uS, bool contact) {
   n_++;
   if (!contact) {

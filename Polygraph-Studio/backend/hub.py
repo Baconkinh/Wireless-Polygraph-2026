@@ -33,6 +33,7 @@ class _Client:
         self.task: asyncio.Task | None = None
 
 
+# [เทคนิค: WebSocket publish/subscribe] backend ดันข้อมูลสดไปทุกหน้าเว็บทันที (ไม่ต้องให้หน้าเว็บถามซ้ำ ๆ แบบ polling)
 class Hub:
     """ศูนย์กระจายข้อมูลสดไปทุกหน้าเว็บที่เปิดอยู่ (WebSocket /ws)
     backend ส่วนอื่นเรียก hub.publish(ชนิด, ข้อมูล) แล้วทุกแท็บได้รับเหมือนกัน

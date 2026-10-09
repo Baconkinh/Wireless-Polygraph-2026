@@ -23,6 +23,8 @@ void MotionProcessor::begin(float fs) {
 }
 
 // ป้อนความเร่ง 3 แกน: หาขนาดรวม แล้วแยกพลังงานการสั่น/การขยับ (RMS)
+// [เทคนิค: Signal processing — band-pass แยกการสั่นกับการขยับ] |a| = √(ax²+ay²+az²) -> band-pass 3–15 Hz = มือสั่น,
+//   0.3–3 Hz = ขยับตัว -> ยกกำลังสองแล้ว EMA 1 s = พลังงาน (RMS²) ของแต่ละย่าน
 void MotionProcessor::push(float ax, float ay, float az) {
   mag_ = sqrtf(ax * ax + ay * ay + az * az);
   if (!init_) {

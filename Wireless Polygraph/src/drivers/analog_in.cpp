@@ -12,6 +12,7 @@ namespace analog {
 
 // ตั้ง ADC 12 บิต + ช่วงวัด 0-3.1 V (11 dB) ของขา NTC, GSR, แบต
 void begin() {
+  // [เทคนิค: ADC configuration] ความละเอียด 12 บิต (0-4095) + attenuation 11 dB (ขยายช่วงวัดให้ถึงระดับ ~2.5 V ตามเอกสาร ESP32-C3)
   analogReadResolution(12);
   analogSetPinAttenuation(PIN_NTC, ADC_11db);
   analogSetPinAttenuation(PIN_GSR, ADC_11db);
@@ -19,6 +20,8 @@ void begin() {
 }
 
 // อ่านแรงดัน (mV, ปรับเทียบจากโรงงานแล้ว) เฉลี่ย n ครั้งเพื่อลด noise
+// [เทคนิค: ADC oversampling + calibrated read] analogReadMilliVolts() ใช้ค่าปรับเทียบ eFuse ของโรงงาน
+//   เฉลี่ย n ครั้ง -> สัญญาณรบกวนสุ่มลดลงประมาณ sqrt(n) เท่า
 float readMv(uint8_t pin, uint8_t n) {
   if (n == 0) n = 1;
   uint32_t s = 0;

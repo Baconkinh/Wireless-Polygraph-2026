@@ -35,6 +35,9 @@ volatile uint32_t s_missed = 0;
 // ---------------- ISR ของ timer สุ่มสัญญาณ (100 Hz) ----------------
 // งานใน ISR ต้องสั้นที่สุด: แค่ "ปลุก" sensorTask ด้วย task notification
 // (deferred interrupt processing — งานหนักไปทำใน task ที่มี priority สูง)
+// [เทคนิค: Hardware timer interrupt + ISR + IRAM_ATTR + Deferred interrupt processing]
+//   timer ฮาร์ดแวร์เรียกฟังก์ชันนี้ทุก 10 ms (100 Hz) — IRAM_ATTR = เก็บโค้ดใน RAM ให้ ISR เรียกได้แม้แฟลชไม่ว่าง
+//   ISR สั้นที่สุด: แค่ส่ง task notification ปลุก sensorTask แล้วงานจริงไปทำใน task (ไม่ใช้ Serial/I2C ใน ISR)
 void IRAM_ATTR onTick() {
   BaseType_t woken = pdFALSE;
   TaskHandle_t h = app::tasks[T_SENSOR].handle;
@@ -46,6 +49,7 @@ void IRAM_ATTR onTick() {
 void sensorTask(void*) {
   wdt::subscribe();
   for (;;) {
+    // [เทคนิค: Task notification] sensorTask บล็อกรอสัญญาณจาก ISR (ไม่กิน CPU ระหว่างรอ) ไม่มาภายใน 50 ms = นับว่าพลาด
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) == 0) s_missed++;   // timer ไม่มา = ผิดปกติ
     const uint32_t t0 = micros();
     wdt::feed();
@@ -113,6 +117,7 @@ void engineTask(void*) {
   Vitals v;
   uint32_t lastSeq = 0;
   for (;;) {
+    // [เทคนิค: Blocking queue receive + timeout] รอ frame จาก sensorTask; timeout 500 ms เพื่อยังรายงานตัว (heartbeat) ได้
     const bool got = xQueueReceive(app::frameQueue, &v, pdMS_TO_TICKS(500)) == pdTRUE;
     const uint32_t t0 = micros();
     wdt::feed();
@@ -132,6 +137,7 @@ void engineTask(void*) {
     lie::Result fresh[3];
     int nFresh = 0;
     xSemaphoreTake(app::engineMutex, portMAX_DELAY);
+    // [เทคนิค: Mutex] บรรทัดบนถือ engineMutex ไว้ -> web_server อ่านผล/สั่งถามพร้อมกันไม่ได้ ข้อมูลไม่ขาดครึ่ง
     const lie::State before = app::engine.state();
     app::engine.push(f);
     const lie::Status st = app::engine.status();
@@ -213,6 +219,8 @@ void supervisorTask(void*) {
   for (;;) {
     // 1) เขียน log ลงแฟลช (ทำที่นี่ที่เดียว: task priority ต่ำสุด การเขียนแฟลชช้าไม่กระทบการวัด)
     LogMsg m;
+    // [เทคนิค: Single-writer flash logging] ทุก task ส่งข้อความเข้า logQueue แต่ supervisor (priority ต่ำสุด) คนเดียวเขียนแฟลช
+    //   การเขียนแฟลชช้า/บล็อกได้ จึงไม่ไปถ่วง task ที่ต้องตรงเวลา (สุ่มสัญญาณ 100 Hz)
     if (xQueueReceive(app::logQueue, &m, pdMS_TO_TICKS(200)) == pdTRUE) {
       do {
         if (!strcmp(m.type, "RESULT")) storage::appendResult(m.text);
@@ -238,6 +246,8 @@ void supervisorTask(void*) {
       if (i == T_SUPERVISOR || !app::tasks[i].handle) continue;
       if (now - app::tasks[i].lastBeatMs > HEARTBEAT_STALE_MS) { stale = app::tasks[i].name; break; }
     }
+    // [เทคนิค: Watchdog แบบ heartbeat] ทุก task จด lastBeatMs; ถ้าครบทุกตัว supervisor จึงป้อน timer watchdog
+    //   task ใดค้างเกิน 6.5 s -> ไม่ป้อน -> ISR ของ timer รีเซ็ตเครื่องใน 12 s พร้อมจดชื่อ task ต้องสงสัยลงกล่องดำ
     if (!stale) wdt::feedHw();
     else wdt::setSuspect(stale);
     if (stale && stale != lastStale) app::logEvent("WDT", "task '%s' silent > %lums", stale, (unsigned long)HEARTBEAT_STALE_MS);
@@ -249,12 +259,14 @@ void supervisorTask(void*) {
     lastCpuUs = nowUs;
     for (int i = 0; i < T_COUNT; i++) {
       const uint32_t busy = app::tasks[i].busyUs;
+      // [เทคนิค: CPU load profiling] แต่ละ task จับเวลา micros() ที่ทำงานจริงเอง -> % CPU ต่อ task (แสดงในหน้าระบบ)
       app::tasks[i].cpuPct = elapsedUs > 0 ? 100.0f * (float)(busy - app::tasks[i].prevBusyUs) / elapsedUs : 0;
       app::tasks[i].prevBusyUs = busy;
     }
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     // 4) ต่อสาย USB กับคอมอยู่ไหม (ตรวจจาก USB SOF) -> เตือนห้ามวัด GSR กับคน
+    // [เทคนิค: USB detection] ดูว่ามี USB SOF จากคอมไหม -> ตั้งบิต EV_USB เตือน "ห้ามวัด GSR กับคนขณะเสียบสาย"
     if (HWCDC::isPlugged()) app::setBits(EV_USB);
     else app::clearBits(EV_USB);
 #endif
@@ -270,6 +282,7 @@ void supervisorTask(void*) {
       ota::scanSlots();
     }
     if (secCount % 60 == 0) storage::stats().uptimeMin++;
+    // [เทคนิค: ถนอมอายุแฟลช (write endurance)] commit EEPROM ทุก 10 นาที ไม่ใช่ทุกครั้งที่ค่าเปลี่ยน
     if (secCount % 600 == 0) storage::saveStats();   // EEPROM commit ทุก 10 นาที (ถนอมแฟลช)
     app::addBusy(T_SUPERVISOR, micros() - t0);
   }
@@ -284,6 +297,8 @@ void create(TaskFunction_t fn, TaskId id, uint32_t stack, UBaseType_t prio) {
 
 // สร้างทั้ง 6 task ตามลำดับ priority (เรียกครั้งเดียวจาก setup)
 void startAll() {
+  // [เทคนิค: Preemptive priority scheduling] sensor 5 > engine 4 > telemetry 3 > http/ui 2 > supervisor 1
+  //   งานที่ต้องตรงเวลาแย่ง CPU ได้ทันที งานช้า (เว็บ/แฟลช) รอได้
   create(sensorTask, T_SENSOR, STACK_SENSOR, PRIO_SENSOR);
   create(engineTask, T_ENGINE, STACK_ENGINE, PRIO_ENGINE);
   create(telemetry::task, T_TELEMETRY, STACK_TELEMETRY, PRIO_TELEMETRY);
@@ -291,6 +306,7 @@ void startAll() {
   create(ui::task, T_UI, STACK_UI, PRIO_UI);
   create(supervisorTask, T_SUPERVISOR, STACK_SUPERVISOR, PRIO_SUPERVISOR);
 
+  // [เทคนิค: Hardware timer] prescaler: APB 80 MHz / 80 = 1 MHz (1 tick = 1 µs), alarm 10,000 tick = 10 ms, auto-reload
   // Hardware timer 0: 100 Hz = จังหวะการสุ่มสัญญาณที่แม่นกว่า vTaskDelay
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
   s_tickTimer = timerBegin(1000000);

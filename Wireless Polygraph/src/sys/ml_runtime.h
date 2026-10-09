@@ -22,6 +22,10 @@ void setMode(uint8_t m);                       // บันทึกลง NVS �
 const char* modeName(uint8_t m);               // "detect" / "train"
 
 bool hasModel();
+// เลือกวิธีตัดสิน: true = โมเดล AI (ถ้ามี), false = สูตรมาตรฐาน/ปรับจากข้อควบคุม (โมเดลยังเก็บอยู่ ไม่ถูกลบ)
+void setUseModel(bool on);
+bool useModel();
+bool modelActive();                            // hasModel() && useModel() = ผลข้อต่อไปมาจากโมเดลจริง
 bool install(const ml::Model& m);              // ตรวจ + บันทึก NVS + ใช้ทันที
 void clearModel();
 ml::Model modelCopy();

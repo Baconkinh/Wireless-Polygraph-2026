@@ -32,6 +32,7 @@ wifi_power_t toPower(uint8_t level) {
 bool s_eventsHooked = false;
 
 // มีเครื่องเชื่อม/หลุดจาก WiFi ของนาฬิกา -> จด log (ทำสั้น ๆ เพราะรันใน task ของ WiFi)
+// [เทคนิค: Event-driven WiFi callback] ระบบ WiFi เรียกเมื่อมีเครื่องเข้า/ออก -> ทำงานสั้น ๆ (จด log, ต่อเวลาก่อนหลับ)
 void onWifiEvent(arduino_event_id_t ev, arduino_event_info_t info) {
   // callback นี้รันใน task ของ WiFi event -> ทำงานสั้น ๆ แล้วส่งต่อผ่านคิว
   if (ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
@@ -46,6 +47,7 @@ void onWifiEvent(arduino_event_id_t ev, arduino_event_info_t info) {
 }  // namespace
 
 // เปิด WiFi แบบ SoftAP ("Polygraph-Watch", 192.168.4.1) ตามระดับกำลังส่งที่ตั้งไว้
+// [เทคนิค: WiFi AP mode + TX power control] ตั้งกำลังส่งก่อนเปิด AP เพื่อลดกระแสพีค (สาเหตุ WiFi ไม่ขึ้นตอนใช้แบต)
 bool beginAp(uint8_t level) {
   s_level = level;
   if (!s_eventsHooked) {

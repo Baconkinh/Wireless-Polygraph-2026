@@ -239,6 +239,12 @@ def register(app: FastAPI, *, link, hub, sync, collector):
         """รายการในถังขยะ (ไฟล์ที่ลบ + สำเนาก่อนแก้)"""
         return {"ok": True, "items": df.list_trash(DATA)}
 
+    @app.post("/api/data/trash/purge", tags=["data"])
+    async def data_trash_purge(body: FileIn):
+        """ลบถาวรจากถังขยะ (name = ชื่อไฟล์ในถัง หรือ "*" = ล้างทั้งถัง) — ย้อนกลับไม่ได้ หน้าเว็บถามยืนยันก่อน"""
+        rep = df.purge_trash(DATA, body.name)
+        return rep if rep.get("ok") else _bad(rep["msg"], 404)
+
     @app.post("/api/data/restore", tags=["data"])
     async def data_restore(body: FileIn):
         """กู้ไฟล์จากถังขยะกลับไปที่ data/ (ถ้าชื่อเดิมยังมีอยู่ ไฟล์ปัจจุบันจะถูกเก็บเข้าถังขยะแทน)"""
@@ -357,6 +363,11 @@ def register(app: FastAPI, *, link, hub, sync, collector):
         if body.on:
             await sync.tick()
         return {"ok": True, **sync.state()}
+
+    @app.post("/api/ai/use", tags=["ai"])
+    async def ai_use(body: AutoIn):
+        """เลือกให้นาฬิกาตัดสินด้วยโมเดล AI (on=true) หรือสูตรมาตรฐาน (on=false) — ปุ่มในหน้าใช้งานจริง"""
+        return await sync.set_use(body.on)
 
     @app.post("/api/ai/upload", tags=["ai"])
     async def ai_upload(body: UploadIn):

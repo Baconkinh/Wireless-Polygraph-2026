@@ -261,6 +261,7 @@ void Engine::computeFeatures(const Frame* pre, int nPre, const Frame* win, int n
 }
 
 // คะแนนรวม = ผลรวม z × น้ำหนัก ของสัญญาณที่ใช้ได้ หารด้วยน้ำหนักรวมของสัญญาณที่ใช้ได้
+// [เทคนิค: สูตรมาตรฐาน — weighted z-score] S = Σ w·clamp(z,−2,6) / Σ w (เฉพาะสัญญาณที่ใช้ได้) แล้ว P = sigmoid(k(S−s0))
 float Engine::scoreOf(const float* z, uint8_t okMask, const float* w) const {
   float s = 0.0f, ws = 0.0f;
   for (int i = 0; i < F_COUNT; i++) {
@@ -274,6 +275,8 @@ float Engine::scoreOf(const float* z, uint8_t okMask, const float* w) const {
 }
 
 // ---------------------------------------------------------------- จบ baseline
+// [เทคนิค: Statistics — Welford mean/SD + null distribution] วัดว่าตอนไม่มีใครถาม ค่าแกว่งเองได้แค่ไหน
+//   เพื่อแปลงการเปลี่ยนแปลงตอนถามจริงเป็น z-score ที่เทียบกันได้ทุกสัญญาณ
 void Engine::finishBaseline() {
   const int n = baseN_;
   Stat st[F_COUNT];
@@ -433,6 +436,7 @@ void Engine::finishQuestion() {
 }
 
 // ---------------------------------------------------------------- calibration
+// [เทคนิค: Per-subject calibration] ใช้ข้อควบคุม (รู้เฉลย) ปรับน้ำหนัก + จุดตัด s0 + ความชัน k ให้เข้ากับคนนี้
 void Engine::recalibrate() {
   int nT = 0, nL = 0;
   for (int j = 0; j < ctlN_; j++) (ctl_[j].lie ? nL : nT)++;

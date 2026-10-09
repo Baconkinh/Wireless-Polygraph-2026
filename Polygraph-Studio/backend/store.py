@@ -141,6 +141,7 @@ ORDER BY t.id;
 """
 
 
+# [เทคนิค: SQLite (WAL) + batch insert] เก็บเซสชัน/ผล/ค่าสด; ค่าสดรวมเป็นชุดเขียนวินาทีละครั้ง (flush_samples) ลดภาระดิสก์
 class Store:
     """ฐานข้อมูล SQLite ของ Studio (data/studio.db) — โครงสร้างตารางอยู่ใน SCHEMA ด้านบน"""
     def __init__(self, path: str):

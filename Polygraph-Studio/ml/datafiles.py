@@ -819,8 +819,30 @@ def list_trash(data_dir: str) -> List[Dict[str, Any]]:
             rows = 0
         out.append({"name": n, "original": m.group(1) + ".csv", "backup_of_edit": bool(m.group(2)),
                     "edited_at": m.group(2) or "", "rows": rows, "bytes": os.path.getsize(p),
-                    "mtime": os.path.getmtime(p)})
+                    "mtime": os.path.getmtime(p),
+                    # ไฟล์ชื่อเดิมยังใช้อยู่ใน data/ ไหม (ช่วยให้หน้าเว็บบอกได้ว่ากู้คืนแล้วจะ "สลับ" หรือ "เอากลับมา")
+                    "original_exists": os.path.isfile(os.path.join(data_dir, m.group(1) + ".csv"))})
     return out
+
+
+def purge_trash(data_dir: str, name: str) -> Dict[str, Any]:
+    """ลบถาวรจากถังขยะ (ผู้ใช้กดยืนยันบนหน้าเว็บแล้ว) name = ชื่อไฟล์ในถังขยะ หรือ "*" = ล้างทั้งถัง
+    ลบเฉพาะไฟล์ result_*.csv ในถังขยะ (และ signals ของรอบที่ไม่มี result เหลือในถังแล้ว) ไม่แตะ data/ หลัก"""
+    tdir = os.path.join(data_dir, TRASH_DIR)
+    items = list_trash(data_dir)
+    targets = items if name == "*" else [x for x in items if x["name"] == os.path.basename(name)]
+    if not targets:
+        return {"ok": False, "msg": "ไม่พบไฟล์นี้ในถังขยะ"}
+    for x in targets:
+        os.remove(os.path.join(tdir, x["name"]))
+    # signals ในถังขยะที่ไม่มี result ของรอบนั้นเหลือในถังแล้ว = ไม่มีใครกู้คืนไปใช้ได้อีก -> ลบด้วย
+    left = {x["original"] for x in list_trash(data_dir)}
+    sdir = os.path.join(tdir, SIGNALS_DIR)
+    if os.path.isdir(sdir):
+        for n in os.listdir(sdir):
+            if n.startswith("signals_") and "result_" + n[len("signals_"):] not in left:
+                os.remove(os.path.join(sdir, n))
+    return {"ok": True, "msg": f"ลบถาวร {len(targets)} ไฟล์แล้ว"}
 
 
 def restore_file(data_dir: str, trash_name: str) -> Dict[str, Any]:
@@ -847,6 +869,7 @@ def restore_file(data_dir: str, trash_name: str) -> Dict[str, Any]:
     return {"ok": True, "msg": f"กู้คืน {item['original']} แล้ว" + swapped}
 
 
+# [เทคนิค: Atomic file update + backup] สำรองเข้าถังขยะ -> เขียนไฟล์ .tmp -> os.replace() สลับชื่อ (ไม่มีไฟล์เสียครึ่งเดียว)
 def _rewrite(data_dir: str, name: str, change: Callable[[List[Dict[str, Any]]], int]) -> Dict[str, Any]:
     """แก้เนื้อหาไฟล์ result อย่างปลอดภัย: สำเนาไฟล์เดิมเข้าถังขยะก่อน -> แก้ -> เขียนไฟล์ชั่วคราว -> สลับชื่อ
     (ไฟล์ไม่มีวันเสียครึ่ง ๆ กลาง ๆ ถ้าไฟดับระหว่างเขียน) change() คืนจำนวนแถวที่เปลี่ยน"""

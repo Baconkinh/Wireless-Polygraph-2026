@@ -42,7 +42,8 @@ export function paintTiles(root, prefix, showBase = false) {
   set('trm', fmt(v.trm, 3), `ขยับตัว ${fmt(v.mot, 2)}`, false, bv('trm', 3));
   set('si', v.si >= 0 ? v.si : '--', v.si >= 0 ? '' : 'คำนวณหลังวัดค่าปกติ', false, null);
   const usb = (v.fl & 256) !== 0;
-  set('bat', v.bat ? v.bp : 'USB', `${fmt(v.vb / 1000, 2)} V${usb ? ' · เสียบ USB' : ''} · CPU ${v.cpu} MHz`, false, null);
+  // วัดแบตไม่ได้ (< 2.5 V ที่ GPIO4) ไม่ได้แปลว่าใช้ไฟ USB เสมอ -> บอกตามที่วัดได้จริง
+  set('bat', v.bat ? v.bp : 'ไม่พบ', `${fmt(v.vb / 1000, 2)} V${usb ? ' · เสียบ USB' : ''} · CPU ${v.cpu} MHz`, !v.bat, null);
 }
 
 // ---------------------------------------------------------------- กราฟเรียลไทม์ 4 กราฟ (2 นาทีล่าสุด)

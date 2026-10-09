@@ -10,6 +10,7 @@
 namespace sensor {
 
 // แรงดันจากวงจรแบ่งแรงดัน NTC -> อุณหภูมิ °C (สมการ Beta)
+// [เทคนิค: วงจรแบ่งแรงดัน + สมการ Beta ของ NTC] R_ntc จากแรงดันที่ ADC แล้ว 1/T = 1/T25 + ln(R/R25)/β
 float ntcCelsius(float vMv, float vccMv, float r1, float r25, float beta) {
   // ใกล้ 0 V = NTC ขาด/R1 ลัด, ใกล้ Vcc = NTC ลัด/R1 ขาด -> ไม่คำนวณ (จะได้ค่าหลอก)
   if (vMv < 50.0f || vMv > vccMv - 50.0f) return NAN;
@@ -19,6 +20,7 @@ float ntcCelsius(float vMv, float vccMv, float r1, float r25, float beta) {
 }
 
 // แรงดันจากวงจร GSR -> ความนำไฟฟ้าของผิว (µS) — ไม่แตะผิว = 0, ลัดวงจร = NaN
+// [เทคนิค: วงจรแบ่งแรงดัน (กฎของโอห์ม)] หาความต้านทานผิวจากแรงดันที่ ADC แล้วกลับเป็นความนำไฟฟ้า G = 1/R (µS)
 float gsrMicroSiemens(float vMv, float vccMv, float r2, float r3) {
   if (vMv < GSR_OPEN_MV) return 0.0f;
   if (vMv > GSR_SHORT_MV) return NAN;

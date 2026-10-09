@@ -103,10 +103,12 @@ void loadSettings() {
 // =====================================================================
 bool begin() {
   // ---- NVS / Preferences ----
+  // [เทคนิค: NVS (Non-Volatile Storage) ผ่าน Preferences] เก็บค่าตั้งแบบ key-value ในแฟลช มี wear leveling ในตัว
   s_prefsOk = prefs.begin(NVS_NS, false);
   if (s_prefsOk) loadSettings();
 
   // ---- EEPROM emulation ----
+  // [เทคนิค: EEPROM emulation + CRC] สถิติสะสมเป็น struct ก้อนเดียว ตรวจ magic/version/size/CRC ทุกครั้งที่อ่าน
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(0, s_stats);
   if (s_stats.magic != STATS_MAGIC || s_stats.version != STATS_VERSION ||
@@ -119,6 +121,7 @@ bool begin() {
   }
 
   // ---- LittleFS (format อัตโนมัติถ้ายังไม่เคยใช้ -> ไม่ต้อง Upload Filesystem ก่อน) ----
+  // [เทคนิค: File system บนแฟลช (LittleFS)] เก็บ log/ผล/ข้อมูลเทรนเป็นไฟล์ ทนไฟดับระหว่างเขียน (copy-on-write)
   s_fsOk = LittleFS.begin(true);
 
   // นับข้อมูลเทรนที่มีอยู่แล้ว (คอลัมน์ที่ 4 = label 0/1)
@@ -260,6 +263,7 @@ size_t fsUsed() { return s_fsOk ? LittleFS.usedBytes() : 0; }
 size_t fsTotal() { return s_fsOk ? LittleFS.totalBytes() : 0; }
 
 // ไฟล์ log ใหญ่เกินกำหนด -> เปลี่ยนชื่อเป็นไฟล์เก่า แล้วเริ่มไฟล์ใหม่ (กันแฟลชเต็ม)
+// [เทคนิค: Log rotation] ไฟล์ใหญ่เกินกำหนด -> เปลี่ยนชื่อเป็น .1 แล้วเริ่มไฟล์ใหม่ (พื้นที่แฟลชไม่เต็ม)
 static void rotateIfBig(const char* path, const char* old, size_t maxBytes) {
   File f = LittleFS.open(path, "r");
   if (!f) return;
@@ -452,6 +456,10 @@ bool saveModel(const ml::Model& m) {
 }
 
 void clearModel() { mlPrefs.remove("model"); }
+
+// [เทคนิค: NVS (Preferences)] ค่า bool 1 ตัว key "use" — อยู่ถาวรแม้ปิดเครื่อง/รีบูต
+bool loadUseModel() { return mlPrefs.getBool("use", true); }
+void saveUseModel(bool on) { mlPrefs.putBool("use", on); }
 
 // ลบไฟล์ log ทั้งหมด
 bool clearLogs() {

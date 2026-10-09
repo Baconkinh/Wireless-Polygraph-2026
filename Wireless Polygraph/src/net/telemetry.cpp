@@ -103,6 +103,8 @@ void sendHi(const Client& c) {
 }
 
 // รับ "hello" จากคอม/มือถือ: ลงทะเบียนผู้รับ (สูงสุด 3 ราย), ตั้งเวลาจริง, เลือกส่ง JSON หรือ CSV แบบเก่า
+// [เทคนิค: UDP + client registration] คอมส่ง "hello" มาที่พอร์ต 4210 -> นาฬิกาจำ IP/พอร์ต แล้วส่งค่าสดกลับ
+//   UDP ไม่ต้องสร้างการเชื่อมต่อ หน่วงต่ำ เหมาะกับข้อมูลสดที่หายบ้างได้ (ผลคำถามสำคัญจึงดึงซ้ำผ่าน HTTP)
 void handleHello(char* msg, IPAddress ip, uint16_t port) {
   s_lastHello = millis();
   app::touchActivity();
@@ -183,11 +185,12 @@ void handleIncoming() {
 }
 
 // ส่งค่าสด 1 ชุดเป็น JSON (5 ครั้ง/วินาที) — ค่าที่ใช้ไม่ได้ส่งเป็น null
+// [เทคนิค: JSON over UDP] ค่าสด 5 ครั้ง/วินาที สร้างด้วย snprintf ลงบัฟเฟอร์บน stack (ไม่ใช้ heap = ไม่มี fragmentation)
 void sendVitals() {
   const Vitals v = app::getVitals();
   const EngineSnap e = app::getEngineSnap();
   char hr[12], hrv[12], pi[12], gsr[12], gt[12], gp[12], tmp[12], trm[12], mot[12];
-  char b[560];
+  char b[600];                        // 560 -> 600: เพิ่มคีย์ "mu" (กรณีเลขยาวสุดทุกช่อง ~551 ไบต์)
   snprintf(b, sizeof(b),
            "{\"t\":\"v\",\"id\":\"%s\",\"seq\":%lu,\"ms\":%lu,"
            "\"hr\":%s,\"hrv\":%s,\"ibi\":%.0f,\"con\":%d,\"pi\":%s,\"amp\":%.0f,\"ir\":%lu,\"beats\":%lu,"
@@ -195,7 +198,7 @@ void sendVitals() {
            "\"tmp\":%s,\"trm\":%s,\"mot\":%s,"
            "\"vb\":%.0f,\"bp\":%u,\"bat\":%d,"
            "\"si\":%d,\"es\":%u,\"ep\":%.2f,\"eel\":%.1f,\"eq\":%u,\"ek\":%u,\"rv\":%lu,\"rs\":%lu,"
-           "\"set\":%d,\"bl\":%d,\"cal\":%d,\"fl\":%u,\"cpu\":%lu,\"eco\":%d,\"md\":%u,\"ml\":%d}",
+           "\"set\":%d,\"bl\":%d,\"cal\":%d,\"fl\":%u,\"cpu\":%lu,\"eco\":%d,\"md\":%u,\"ml\":%d,\"mu\":%d}",
            net::deviceId(), (unsigned long)++s_seqV, (unsigned long)v.ms,
            f2s(hr, sizeof hr, v.hr > 0 ? v.hr : NAN, 1), f2s(hrv, sizeof hrv, v.hrv > 0 ? v.hrv : NAN, 1),
            (double)v.ibi, v.ppgContact ? 1 : 0, f2s(pi, sizeof pi, v.pi, 2), (double)v.ppgAmp,
@@ -211,7 +214,7 @@ void sendVitals() {
            (unsigned long)e.revision, (unsigned long)e.lastSeq,
            e.settled ? 1 : 0, e.baselineValid ? 1 : 0, e.calibrated ? 1 : 0, v.flags,
            (unsigned long)getCpuFrequencyMhz(), (app::bits() & EV_ECO) ? 1 : 0, mlrt::mode(),
-           mlrt::hasModel() ? 1 : 0);
+           mlrt::hasModel() ? 1 : 0, mlrt::modelActive() ? 1 : 0);   // mu = ตอนนี้ตัดสินด้วยโมเดล AI จริงไหม
   sendAll(b, false);
 }
 
@@ -227,6 +230,7 @@ void sendWave(const WaveChunk& w) {
 }
 
 // ลบผู้รับที่ไม่ได้ส่ง hello เกินกำหนด (ปิดแอป/ออกจาก WiFi แล้ว)
+// [เทคนิค: Keep-alive timeout] เครื่องที่ไม่ส่ง hello ซ้ำเกินเวลา = เลิกส่งให้ (ไม่เปลืองแบนด์วิดท์/ไฟ)
 void expireClients(uint32_t now) {
   bool any = false;
   for (auto& c : s_clients) {

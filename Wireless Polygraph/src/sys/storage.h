@@ -147,5 +147,9 @@ constexpr size_t TRAIN_MAX = 180 * 1024;              // กันพื้น�
 bool loadModel(ml::Model& m);
 bool saveModel(const ml::Model& m);
 void clearModel();
+// ผู้ใช้เลือกให้ตัดสินด้วยโมเดล AI (true) หรือสูตรมาตรฐาน (false) — เก็บใน NVS (namespace "ml" key "use")
+// แยกจากตัวโมเดล: เลือกใช้สูตรได้โดยไม่ต้องลบโมเดลทิ้ง; ค่าเริ่มต้น true (มีโมเดลก็ใช้)
+bool loadUseModel();
+void saveUseModel(bool on);
 
 }  // namespace storage

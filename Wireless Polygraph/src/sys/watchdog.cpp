@@ -39,6 +39,8 @@ void copyName(char* dst, size_t n, const char* src) {
 // เขียนกล่องดำด้วยมือ แล้วสั่ง abort() (panic handler ทำงานได้จากทุก context และบันทึก core dump)
 // ไม่ใช้ esp_restart() เหมือนในสไลด์ เพราะ esp_restart() จะเรียก esp_wifi_stop()
 // ซึ่งรอ mutex -> ห้ามเรียกใน ISR (assert ล้มก่อนจะรีเซ็ตเรียบร้อย)
+// [เทคนิค: Watchdog ISR + RTC_NOINIT black box] จดเหตุผล + ชื่อ task ที่ค้างลง RAM ที่รอดการรีเซ็ต แล้ว abort()
+//   (abort -> panic handler บันทึก core dump ลงพาร์ทิชัน coredump) — ใน ISR ห้ามใช้ Serial.print/mutex
 void IRAM_ATTR hwWdtIsr() {
   rtcRecord.magic = 0xC0FFEE42;
   rtcRecord.reason = (s_demo == DEMO_HWWDT) ? PR_DEMO_HWWDT : PR_HW_WDT;
@@ -55,6 +57,7 @@ void IRAM_ATTR hwWdtIsr() {
 }  // namespace
 
 // =====================================================================
+// [เทคนิค: Post-mortem diagnostics] reset reason + wakeup cause + กล่องดำ RTC + สรุป core dump (task, PC) ของการล่มครั้งก่อน
 void captureBootInfo() {
   s_boot.reason = esp_reset_reason();
   s_boot.wakeCause = (uint32_t)esp_sleep_get_wakeup_cause();
@@ -143,6 +146,7 @@ bool isWdtReset(esp_reset_reason_t r) {
 }
 
 // ---------------- Task WDT ----------------
+// [เทคนิค: Task Watchdog Timer (ESP-IDF)] timeout 8 s, trigger_panic = true -> รีเซ็ตพร้อม backtrace
 void beginTaskWdt() {
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
   esp_task_wdt_config_t c;
@@ -175,6 +179,7 @@ void beginHwWdt() {
 }
 
 // ป้อน hardware timer watchdog (นับใหม่จาก 0) — supervisor เรียกเมื่อทุก task ยังมีชีวิต
+// [เทคนิค: Kicking the dog] timerWrite(…, 0) = เริ่มนับใหม่ ถ้าไม่มีใครเรียกจนครบ 12 s -> hwWdtIsr()
 void feedHw() {
   if (!s_hwTimer || s_hwPaused) return;
   if (s_demo == DEMO_HWWDT) return;                     // สาธิต: แกล้งไม่ป้อน

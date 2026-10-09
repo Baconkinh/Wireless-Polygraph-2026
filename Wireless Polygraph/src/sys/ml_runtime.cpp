@@ -15,11 +15,13 @@ namespace mlrt {
 namespace {
 ml::Model s_model;
 volatile bool s_loaded = false;
+volatile bool s_use = true;            // ผู้ใช้เลือกใช้โมเดล AI (โหลดจาก NVS ตอนบูต)
 char s_subject[24] = "-";
 
 // ถูกเรียกจากใน LieEngine (engineTask ถือ engineMutex อยู่แล้ว) -> อ่าน s_model ได้ปลอดภัย
+// [เทคนิค: Strategy / function pointer] LieEngine เรียก scorer ที่ผูกไว้ -> สลับ "สูตรมาตรฐาน" กับ "โมเดล AI" ได้โดยไม่แก้ engine
 bool scorer(const lie::Result& r, float& p, void*) {
-  if (!s_loaded) return false;
+  if (!s_loaded || !s_use) return false;      // false = ให้ LieEngine ใช้สูตรมาตรฐานของตัวเอง
   p = ml::predict(s_model, r);
   return true;
 }
@@ -32,6 +34,7 @@ void begin() {
     s_model = m;
     s_loaded = true;
   }
+  s_use = storage::loadUseModel();
   app::engine.setScorer(scorer, nullptr);
 }
 
@@ -46,6 +49,16 @@ void setMode(uint8_t m) {
 const char* modeName(uint8_t m) { return m == MODE_TRAIN ? "train" : "detect"; }
 
 bool hasModel() { return s_loaded; }
+
+// สลับวิธีตัดสินขณะ engine ไม่ได้คำนวณ (ถือ engineMutex) แล้วจำลง NVS
+void setUseModel(bool on) {
+  xSemaphoreTake(app::engineMutex, portMAX_DELAY);
+  s_use = on;
+  xSemaphoreGive(app::engineMutex);
+  storage::saveUseModel(on);
+}
+bool useModel() { return s_use; }
+bool modelActive() { return s_loaded && s_use; }
 
 // ติดตั้งโมเดลใหม่: seal (ใส่ CRC32) -> ตรวจ -> บันทึก NVS -> สลับใช้ขณะถือ engineMutex
 bool install(const ml::Model& in) {
@@ -141,6 +154,8 @@ void appendJson(Json& j) {
   j.kv("max", (unsigned long)storage::TRAIN_MAX);
   j.end();
   const ml::Model m = modelCopy();
+  j.kv("use", (bool)s_use);                 // ผู้ใช้เลือกใช้โมเดล AI ไหม
+  j.kv("active", (bool)(s_loaded && s_use)); // ตัดสินด้วยโมเดลจริงไหม
   j.obj("model");
   j.kv("loaded", (bool)s_loaded);
   if (s_loaded) {

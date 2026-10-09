@@ -110,6 +110,7 @@ void handleUpdateDone() {
 }
 
 // รับไฟล์เฟิร์มแวร์ทีละช่วงแล้วเขียนลง slot OTA ที่ไม่ได้ใช้อยู่ (ตรวจรหัสผ่านก่อน)
+// [เทคนิค: OTA ผ่าน HTTP + Basic auth] รับไฟล์ firmware.bin ทีละก้อนแล้วเขียนลงพาร์ทิชัน app ที่ไม่ได้ใช้ (Update.write)
 void handleUpload() {
   HTTPUpload& up = s_srv->upload();
   if (up.status == UPLOAD_FILE_START) {
@@ -209,6 +210,8 @@ void scanSlots() {
 }
 
 // เฟิร์มแวร์ใหม่ทำงานได้ครบ 20 วินาที + WiFi ใช้ได้ -> ยืนยัน (ไม่งั้นบูตหน้าจะย้อนกลับเวอร์ชันเดิม)
+// [เทคนิค: OTA rollback (app0/app1 + otadata)] เฟิร์มแวร์ใหม่ต้องทำงานได้จริงก่อน (WiFi ขึ้น + task มีชีวิต)
+//   ถึงยืนยัน valid; ถ้าล่มก่อนยืนยัน bootloader ย้อนกลับเวอร์ชันเดิมให้เอง
 void serviceVerify() {
   if (!s_checked || !s_pending) return;
   // เงื่อนไข "ทำงานได้จริง": บูตผ่านมาครบเวลา + WiFi ทำงาน + task หลักยังรายงานตัว

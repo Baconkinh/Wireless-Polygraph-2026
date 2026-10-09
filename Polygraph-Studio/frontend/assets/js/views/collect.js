@@ -65,7 +65,7 @@ function render() {
 function renderBusy() {
   $('#cl-main', root).innerHTML = `<h3>${I('alert')} หน้า "ใช้งานจริง" กำลังใช้นาฬิกาอยู่</h3>
     <p>นาฬิกาถามได้ทีละรอบ — จบรอบใช้งานจริงก่อน แล้วค่อยเริ่มเก็บข้อมูล</p>
-    <div class="row"><button class="btn" onclick="goto('use')">ไปหน้าใช้งานจริง</button>
+    <div class="row"><button class="btn" onclick="goto('home')">ไปหน้าใช้งานจริง (หน้าหลัก)</button>
       <button class="btn danger" id="cl-stop-other">${I('x')} จบรอบนั้น</button></div>`;
   $('#cl-stop-other', root).onclick = () => post('/api/collect/stop');
 }

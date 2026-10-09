@@ -119,6 +119,7 @@ class VirtualWatch:
         self.ml_subject = "-"
         self.auto_qid = 1
         self.train_lines: List[str] = []          # แทนไฟล์ /train.csv ใน LittleFS
+        self.use_model = True                     # เหมือน NVS key "use" ในเฟิร์มแวร์ (ค่าเริ่มต้น: ใช้โมเดล)
         self.fb_seqs: List[int] = []              # seq ที่ส่ง feedback ไปแล้ว (กันแถวซ้ำ เหมือน s_fbSeq ในเฟิร์มแวร์)
         self.model: Optional[pm.Model] = None
         self.model_info: Dict[str, Any] = {}
@@ -168,7 +169,7 @@ class VirtualWatch:
     # ------------------------------------------------------------------ AI
     def scorer(self, r: le.Result):
         """ใช้โมเดลถ้าติดตั้งไว้ (ทุกโหมด เหมือนเฟิร์มแวร์) ไม่มีโมเดล -> None = ใช้สูตรเดิม"""
-        if self.model is None:
+        if self.model is None or not self.use_model:     # ผู้ใช้เลือกสูตรมาตรฐาน (POST /api/ml/use?on=0)
             return None
         return self.model.prob(pm.features_from(r.okMask, r.z, r.feat))
 
@@ -378,6 +379,7 @@ class VirtualWatch:
             "set": int(st["settled"]), "bl": int(st["baselineValid"]), "cal": int(st["calibrated"]),
             "fl": (512 if mot > 1.5 else 0) | (1 << 11), "cpu": 80 if self.eco else 160, "eco": int(self.eco),
             "md": int(self.settings["mode"]), "ml": int(self.model is not None),
+            "mu": int(self.model is not None and self.use_model),
             "sby": int(self.settings["standbyMin"]), "wp": int(self.settings["wifiPower"]),
         }
         if self.n100 % (50 if self.eco else 20) == 0:
@@ -785,6 +787,7 @@ def make_app(vw: VirtualWatch) -> FastAPI:
                       "samples": vw.model_info.get("samples", 0), "trainedAt": vw.model_info.get("trained", 0),
                       "b": round(vw.model.b, 4), "features": vw.model.features, "w": [round(x, 4) for x in vw.model.w]})
         return {"ok": True, "mode": "train" if vw.settings["mode"] == 1 else "detect", "subject": vw.ml_subject,
+                "use": vw.use_model, "active": vw.model is not None and vw.use_model,
                 "data": {"truth": n0, "lie": n1, "bytes": vw.train_bytes(), "max": TRAIN_MAX}, "model": m}
 
     @app.post("/api/ml/mode")
@@ -871,6 +874,18 @@ def make_app(vw: VirtualWatch) -> FastAPI:
         vw.train_lines.append(",".join(row))
         vw.fb_seqs = (vw.fb_seqs + [seq])[-8:]
         return ok("บันทึกเป็นข้อมูลเทรนแล้ว (เฉลย: " + ("โกหก" if lab else "จริง") + ")")
+
+    @app.post("/api/ml/use")
+    async def ml_use(on: Optional[int] = None):
+        """POST /api/ml/use?on=1|0: ตัดสินด้วยโมเดล AI หรือสูตรมาตรฐาน (โมเดลไม่ถูกลบ)"""
+        if on is None:
+            return fail(400, "BAD_VALUE", "ต้องระบุ on=1 (โมเดล AI) หรือ on=0 (สูตรมาตรฐาน)")
+        vw.use_model = bool(on)
+        vw.log("ML", "decide by " + ("AI model" if on else "rules"))
+        vw.event("decider", use=int(bool(on)))
+        if on and vw.model is None:
+            return ok("เลือกโมเดล AI แล้ว แต่นาฬิกายังไม่มีโมเดล — ใช้สูตรมาตรฐานไปก่อนจนกว่าจะอัปโหลด")
+        return ok("ตัดสินด้วยโมเดล AI" if on else "ตัดสินด้วยสูตรมาตรฐาน (โมเดลยังเก็บไว้ในนาฬิกา)")
 
     @app.post("/api/ml/data/delete")
     async def ml_data_delete(row: int = 0, t: str = "", qid: int = -1):

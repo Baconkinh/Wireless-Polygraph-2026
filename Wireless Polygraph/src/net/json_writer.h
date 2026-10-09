@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <math.h>
 
+// [เทคนิค: Lightweight serializer] สร้าง JSON เองโดยไม่ใช้ไลบรารี: จัดคอมม่า/escape/NaN->null ให้ ลดขนาดเฟิร์มแวร์
 class Json {
  public:
   explicit Json(size_t reserve = 1024) { s_.reserve(reserve); }

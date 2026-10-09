@@ -41,7 +41,7 @@ export function mount(el) {
     <div class="card" style="margin-top:16px"><h3>${I('trash')} ถังขยะ <span class="mono small">data/trash/</span>
         <span class="right small muted" id="dt-trash-n"></span></h3>
       <p class="small muted">ไฟล์ที่ลบจากหน้าเว็บ และสำเนาก่อนลบรายข้อ/แก้ "ใช้เทรน" อยู่ที่นี่ทั้งหมด — กด "กู้คืน" เพื่อเอากลับ
-        (ถ้าชื่อซ้ำกับไฟล์ที่ใช้อยู่ ไฟล์ที่ใช้อยู่จะถูกเก็บเข้าถังขยะแทน ไม่มีอะไรหาย) · อยากลบถาวรให้ลบโฟลเดอร์ data/trash/ เอง</p>
+        (ถ้าชื่อซ้ำกับไฟล์ที่ใช้อยู่ ไฟล์ที่ใช้อยู่จะถูกเก็บเข้าถังขยะแทน ไม่มีอะไรหาย จึงยังเห็นรายการของรอบนั้นอยู่) · ลบถาวร = ปุ่มถังขยะท้ายแถว / ล้างถังขยะ</p>
       <div style="overflow:auto;max-height:280px"><table class="t small" id="dt-trash"></table></div>
     </div>
     <div class="grid g2" style="margin-top:16px">
@@ -153,24 +153,45 @@ function paintFiles(d) {
   $('#dt-train', root).innerHTML = `${I('flask')} เทรน AI จากไฟล์ที่ติ๊ก (${t.used || 0} ข้อ)`;
 }
 
-// ถังขยะ: รายการไฟล์ที่ลบ + สำเนาก่อนแก้ พร้อมปุ่มกู้คืน
+// ถังขยะ: รายการไฟล์ที่ลบ + สำเนาก่อนแก้ พร้อมปุ่มกู้คืน / ลบถาวร
+// ในถังมี 2 แบบ (ผู้ใช้เคยงงว่า "กู้คืนแล้วทำไมยังอยู่" — เพราะสำเนาแต่ละเวอร์ชันเป็นคนละรายการ):
+//   1) ไฟล์ที่ถูกลบทั้งไฟล์          result_<รอบ>.csv              กู้คืน = ย้ายกลับไป data/ (หายจากถัง)
+//   2) สำเนาก่อนแก้/ลบรายข้อ       result_<รอบ>.before_<เวลา>.csv  กู้คืน = ย้อนไฟล์เป็นเวอร์ชันนี้
+//      ไฟล์ปัจจุบันจะกลายเป็นสำเนาใหม่ในถังแทน (สลับกัน ไม่มีอะไรหาย) -> จึงยังเห็นรายการของรอบนั้นในถัง
+const stampTh = (st) => (st && st.length >= 15 ? `${st.slice(6, 8)}/${st.slice(4, 6)} ${st.slice(9, 11)}:${st.slice(11, 13)}:${st.slice(13, 15)}` : '');
 async function loadTrash() {
   const r = await get('/api/data/trash', { quiet: true });
   const items = (r && r.items) || [];
-  $('#dt-trash-n', root).textContent = items.length ? `${items.length} ไฟล์` : '';
-  $('#dt-trash', root).innerHTML = `<tr><th>ไฟล์ในถังขยะ</th><th>คืออะไร</th><th>ข้อ</th><th>เวลา</th><th></th></tr>` +
+  $('#dt-trash-n', root).innerHTML = items.length
+    ? `${items.length} ไฟล์ <button class="btn sm ghost danger" id="dt-purge-all">ล้างถังขยะ</button>` : '';
+  $('#dt-trash', root).innerHTML = `<tr><th>ไฟล์ในถังขยะ</th><th>คืออะไร</th><th>ข้อ</th><th>ย้ายเข้าถังเมื่อ</th><th></th></tr>` +
     (items.map((x) => `<tr><td class="mono">${esc(x.name)}</td>
-      <td class="small">${x.backup_of_edit ? `สำเนาของ ${esc(x.original)} ก่อนลบรายข้อ/แก้` : 'ไฟล์ที่ถูกลบทั้งไฟล์'}</td>
+      <td class="small">${x.backup_of_edit
+        ? `สำเนาของ <span class="mono">${esc(x.original)}</span> ก่อนแก้ไข (${esc(stampTh(x.edited_at))})
+           ${x.original_exists ? '<br><span class="muted">กู้คืน = ย้อนไฟล์เป็นเวอร์ชันนี้ ไฟล์ปัจจุบันจะถูกเก็บเป็นสำเนาแทน</span>' : ''}`
+        : `ไฟล์ที่ถูกลบทั้งไฟล์${x.original_exists ? ' <span class="muted">(ตอนนี้มีไฟล์ชื่อเดียวกันใน data/ — กู้คืนจะสลับกัน)</span>' : ''}`}</td>
       <td>${x.rows}</td><td class="small">${timeStr(x.mtime)}</td>
-      <td><button class="btn sm ghost" data-restore="${esc(x.name)}">กู้คืน</button></td></tr>`).join('')
+      <td><div class="acts"><button class="btn sm ghost" data-restore="${esc(x.name)}">กู้คืน</button>
+        <button class="btn sm ghost danger" data-purge="${esc(x.name)}" title="ลบถาวร">${I('trash')}</button></div></td></tr>`).join('')
       || '<tr><td colspan="5" class="muted">ถังขยะว่าง</td></tr>');
   root.querySelectorAll('#dt-trash button[data-restore]').forEach((b) => {
     b.onclick = async () => {
       const r2 = await post('/api/data/restore', { name: b.dataset.restore });
-      if (r2 && r2.ok) toast(r2.msg, 'ok', 7000);
-      loadFiles(); if (hist) hist.refresh();
+      if (r2 && r2.ok) toast(r2.msg, 'ok', 8000);
+      await loadFiles(); await loadTrash(); if (hist) hist.refresh();
     };
   });
+  const purge = async (name, label) => {
+    if (!(await confirmModal('ลบถาวร?', `<p>${label} จะถูกลบออกจากเครื่องจริง <b>ย้อนกลับไม่ได้</b></p>`, 'ลบถาวร', true))) return;
+    const r3 = await post('/api/data/trash/purge', { name });
+    if (r3 && r3.ok) toast(r3.msg, 'ok');
+    loadTrash();
+  };
+  root.querySelectorAll('#dt-trash button[data-purge]').forEach((b) => {
+    b.onclick = () => purge(b.dataset.purge, `<span class="mono">${esc(b.dataset.purge)}</span>`);
+  });
+  const all = $('#dt-purge-all', root);
+  if (all) all.onclick = () => purge('*', `ทุกไฟล์ในถังขยะ (${items.length} ไฟล์)`);
 }
 
 // ดึงข้อมูลที่นาฬิกาบันทึกเองมาเป็น result_*.csv (เฉพาะข้อใหม่)
