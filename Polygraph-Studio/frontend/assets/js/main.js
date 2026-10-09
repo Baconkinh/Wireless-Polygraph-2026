@@ -27,8 +27,8 @@ function fallbackView(name, err) {
       el.innerHTML = `<div class="card"><h3><svg class=i><use href=#i-alert></use></svg> หน้านี้โหลดไม่สำเร็จ</h3>
         <p class="muted">หน้า "${TITLES[name] || name}" เปิดไม่ได้ (${err ? err.message : 'ไม่พบไฟล์'})
         แต่ส่วนอื่นยังใช้ได้ และ Backend ทำงานปกติ</p>
-        <p>สั่งงานและดูข้อมูลได้ที่ <a href="/docs" target="_blank">หน้าเอกสาร API (/docs)</a>
-        · ดูรายงานได้ที่ <span class="mono">/report/&lt;เลขเซสชัน&gt;</span></p></div>`;
+        <p>ส่วนใหญ่เกิดจาก<b>เบราว์เซอร์จำไฟล์หน้าเว็บรุ่นเก่า</b>หลังอัปเดต Studio — ปิด run_studio.bat แล้วเปิดใหม่ จากนั้นกด <b>Ctrl+F5</b></p>
+        <p>สั่งงานและดูข้อมูลได้ที่ <a href="/docs" target="_blank">หน้าเอกสาร API (/docs)</a></p></div>`;
     },
     show() {}, hide() {},
   };
