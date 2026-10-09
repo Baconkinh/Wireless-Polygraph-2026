@@ -1,0 +1,14 @@
+# ไฟล์ที่ไม่ควรขึ้น git (สร้างใหม่เองทุกครั้งที่รันโปรแกรม)
+
+# SQLite โหมด WAL: ไฟล์ชั่วคราวที่ Studio เปิดค้างไว้ตลอดเวลาที่รันอยู่
+# (ถ้า track ไว้ git จะพยายามเขียนทับตอน discard/pull แล้ว Windows ไม่ยอมเพราะไฟล์ถูกล็อก
+#  -> "unable to unlink old ... studio.db-wal: Invalid argument")
+Polygraph-Studio/data/studio.db-wal
+Polygraph-Studio/data/studio.db-shm
+
+# Python cache
+__pycache__/
+*.pyc
+
+# ผลการ build ของ PlatformIO
+Wireless Polygraph/.pio/
