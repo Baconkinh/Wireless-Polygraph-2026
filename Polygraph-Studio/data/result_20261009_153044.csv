@@ -1,0 +1,4 @@
+﻿time_iso,run_id,source,subject,operator,question_no,watch_qid,mode,question_text,label,feedback,verdict,p_lie,decided_by,quality,reasons,ok_mask,gsr_ok,ppg_ok,used_for_training,d_gsr,d_hr,d_amp,d_trm,d_tmp,z_gsr,z_hr,z_amp,z_trm,z_tmp,note
+2026-10-09 15:33:14.666,20261009_153044,desktop,วิว,gemini,1,600,live,,unknown,unknown,inconclusive,0.49,ai_model,77,1,30,0,1,0,0,29.9676,0.0923,0.001,-0.0138,0,-0.25,-1.97,0.08,-0.24,ที่มา: desktop (Studio บนคอม)
+2026-10-09 15:33:39.365,20261009_153044,desktop,วิว,gemini,2,601,live,,unknown,unknown,inconclusive,0.492,ai_model,65,1,30,0,1,0,0,23.6907,0.3641,-0.1481,-0.0045,0,-0.95,2.1,-7.38,0.07,ที่มา: desktop (Studio บนคอม)
+2026-10-09 15:33:55.873,20261009_153044,desktop,วิว,gemini,3,602,live,,truth,inconclusive,inconclusive,0.547,ai_model,70,1,30,0,1,1,0,10.8738,0.3971,-0.0025,-0.0097,0,-2.37,2.6,-0.09,-0.1,ที่มา: desktop (Studio บนคอม)
